@@ -1,0 +1,6 @@
+{
+  "ap_ssid": "ESP32-WebServer",
+  "ap_password": "123456789",
+  "sta_ssid": "",
+  "sta_password": ""
+}

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Configuration | ESP32</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <main class="main">
+        <section class="hero">
+          <h1 class="hero-title">Configuración WiFi</h1>
+          <p class="hero-paragraph">
+            Lorem ipsum, dolor sit amet consectetur adipisicing elit. Omnis pariatur dolores commodi
+            aperiam officia quaerat autem.
+          </p>
+        </section>
+
+        <form id="form">
+          <div class="form-group">
+            <label for="ssidInput" class="input-label">Nombre de la red</label>
+            <div class="input-container">
+              <input id="ssidInput" type="text" class="input" />
+              <div class="input-border"></div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="passwordInput" class="input-label">Contraseña (si es necesario)</label>
+            <div class="input-container">
+              <input id="passwordInput" type="password" class="input" />
+              <div class="input-border"></div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-accept form-submit pointer">
+            <span class="btn-label">GUARDAR</span>
+          </button>
+        </form>
+
+        <section class="networks">
+          <div id="networksLoader" class="networks-loader-container hidden">
+            <div class="networks-loader"></div>
+          </div>
+
+          <div id="networksHero" class="networks-hero">
+            <p class="hero-paragraph">
+              Lorem ipsum, dolor sit amet consectetur adipisicing elit. Omnis pariatur dolores
+              commodi aperiam officia quaerat autem.
+            </p>
+
+            <button type="button" id="btnScan" class="btn btn-accept pointer">
+              <span class="btn-label">ESCANEAR</span>
+            </button>
+          </div>
+
+          <div id="networksFounded" class="networks-founded hidden">
+            <h2 class="networks-title">Redes encontradas</h2>
+            <button type="button" id="btnRefresh" class="btn pointer">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                class="btn-icon"
+              >
+                <path
+                  fill="currentColor"
+                  fill-rule="evenodd"
+                  d="M8 3.5q-1.157 0-2.297.066a1.124 1.124 0 0 0-1.058 1.028l-.018.214a.75.75 0 1 1-1.495-.12l.018-.221a2.624 2.624 0 0 1 2.467-2.399a42 42 0 0 1 4.766 0a2.624 2.624 0 0 1 2.467 2.399q.084.993.122 2l.748-.748a.75.75 0 1 1 1.06 1.06l-2 2.001a.75.75 0 0 1-1.061 0l-2-1.999a.75.75 0 0 1 1.061-1.06l.689.688a40 40 0 0 0-.114-1.815a1.124 1.124 0 0 0-1.058-1.028A40 40 0 0 0 8 3.5M3.22 7.22a.75.75 0 0 1 1.061 0l2 2a.75.75 0 1 1-1.06 1.06l-.69-.69q.037.914.114 1.816c.048.56.496.996 1.058 1.028a40 40 0 0 0 4.594 0a1.124 1.124 0 0 0 1.058-1.028l.018-.219a.75.75 0 1 1 1.495.12l-.018.226a2.624 2.624 0 0 1-2.467 2.399a42 42 0 0 1-4.766 0a2.624 2.624 0 0 1-2.467-2.399a41 41 0 0 1-.122-2l-.748.748A.75.75 0 1 1 1.22 9.22z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <ul id="list"></ul>
+        </section>
+      </main>
+
+      <footer id="footer"></footer>
+    </div>
+
+    <template id="listItemTemplate">
+      <li class="list-item">
+        <button id="btnListItem" class="btn list-item-btn pointer">
+          <aside class="list-item-details">
+            <span id="listItemSSID" class="list-item-ssid"></span>
+
+            <div id="listItemSecure">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                class="list-item-secured"
+              >
+                <path
+                  fill="currentColor"
+                  fill-rule="evenodd"
+                  d="M12 1.5a5.25 5.25 0 0 0-5.25 5.25v3a3 3 0 0 0-3 3v6.75a3 3 0 0 0 3 3h10.5a3 3 0 0 0 3-3v-6.75a3 3 0 0 0-3-3v-3c0-2.9-2.35-5.25-5.25-5.25m3.75 8.25v-3a3.75 3.75 0 1 0-7.5 0v3z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </div>
+
+            <div id="listItemNotSecure">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                class="list-item-secured"
+              >
+                <path
+                  fill="currentColor"
+                  d="M18 1.5c2.9 0 5.25 2.35 5.25 5.25v3.75a.75.75 0 0 1-1.5 0V6.75a3.75 3.75 0 1 0-7.5 0v3a3 3 0 0 1 3 3v6.75a3 3 0 0 1-3 3H3.75a3 3 0 0 1-3-3v-6.75a3 3 0 0 1 3-3h9v-3c0-2.9 2.35-5.25 5.25-5.25"
+                />
+              </svg>
+            </div>
+          </aside>
+
+          <div id="listItemRRSI">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              class="list-item-rrsi"
+            >
+              <!-- Bars ordered from high to low -->
+              <path
+                class="rrsi-bar"
+                fill="currentColor"
+                fill-rule="evenodd"
+                d="M14.188 7.063a8.75 8.75 0 0 0-12.374 0a.75.75 0 0 1-1.061-1.06c4.003-4.004 10.493-4.004 14.496 0a.75.75 0 1 1-1.061 1.06"
+              />
+
+              <path
+                class="rrsi-bar"
+                fill="currentColor"
+                fill-rule="evenodd"
+                d="M12.067 9.184a5.75 5.75 0 0 0-8.132 0a.75.75 0 0 1-1.06-1.06a7.25 7.25 0 0 1 10.252 0a.75.75 0 0 1-1.06 1.06"
+              />
+
+              <path
+                class="rrsi-bar"
+                fill="currentColor"
+                fill-rule="evenodd"
+                d="M9.945 11.306a2.75 2.75 0 0 0-3.889 0a.75.75 0 1 1-1.06-1.061a4.25 4.25 0 0 1 6.01 0a.75.75 0 0 1-1.06 1.06"
+              />
+
+              <path
+                class="rrsi-bar"
+                fill="currentColor"
+                fill-rule="evenodd"
+                d="M7.117 12.366a1.25 1.25 0 0 1 1.768 0a.75.75 0 0 1 0 1.06l-.355.355a.75.75 0 0 1-1.06 0l-.354-.354a.75.75 0 0 1 0-1.06"
+              />
+            </svg>
+          </div>
+        </button>
+      </li>
+    </template>
+
+    <template id="footerTemplate">
+      <span class="footer-text">© <span id="footerYear"></span>, La Habana, Cuba</span>
+    </template>
+
+    <script src="script.js"></script>
+  </body>
+</html>
