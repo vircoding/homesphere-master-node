@@ -1,258 +1,126 @@
-#include <ArduinoJson.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <LittleFS.h>
-#include <WiFi.h>
 #include <esp_task_wdt.h>
+#include <freertos/FreeRTOS.h>
 
-int LED = 2;
+#include "ConfigManager.hpp"
+#include "IndicatorManager.hpp"
+#include "KeypadManager.hpp"
+#include "MenuManager.hpp"
+#include "WebServerManager.hpp"
+#include "WiFiManager.hpp"
 
-// Configuración del hotspot
-String apSSID;
-String apPassword;
+const uint8_t rgbRed = 16;
+const uint8_t rgbGreen = 17;
+const uint8_t rgbBlue = 18;
+const uint8_t keypadUp = 23;
+const uint8_t keypadDown = 22;
+const uint8_t keypadBack = 21;
+const uint8_t keypadEnter = 19;
+const uint8_t lcdRS = 13;
+const uint8_t lcdEN = 14;
+const uint8_t lcdD4 = 27;
+const uint8_t lcdD5 = 26;
+const uint8_t lcdD6 = 25;
+const uint8_t lcdD7 = 33;
 
-bool hasInternet = true;
+MenuManager::Data data;
+uint32_t wdtTimeout = 5;  // Valor inicial (segundos)
 
-// Configuración de la red
-String staSSID;
-String staPassword;
+ConfigManager config;
+WiFiManager wifi;
+WebServerManager server(config, wifi);
+IndicatorManager rgb(rgbRed, rgbGreen, rgbBlue);
+KeypadManager keypad(keypadUp, keypadDown, keypadBack, keypadEnter);
+MenuManager menu(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7, server, data);
 
-// Crear el servidor web asíncrono en el puerto 80
-AsyncWebServer server(80);
-
-bool initConfig() {
-  // Abrir archivo config.json desde LittleFS
-  File configFile = LittleFS.open("/config.json", "r");
-
-  if (!configFile) {
-    Serial.println("Error al abrir el archivo de configuración");
-    return false;
-  }
-
-  // Parsear el JSON
-  JsonDocument jsonDoc;
-  DeserializationError error = deserializeJson(jsonDoc, configFile);
-
-  if (error) {
-    Serial.println("Error al parsear el JSON");
-    configFile.close();
-    return false;
-  }
-
-  // Extraer los valores del JSON
-  apSSID = jsonDoc["ap_ssid"].as<String>();
-  apPassword = jsonDoc["ap_password"].as<String>();
-  staSSID = jsonDoc["sta_ssid"].as<String>();
-  staPassword = jsonDoc["sta_password"].as<String>();
-
-  // Cierra el archivo config.json
-  configFile.close();
-  return true;
+void setWatchdogTimeout(uint32_t new_timeout) {
+  wdtTimeout = new_timeout;
+  esp_task_wdt_init(wdtTimeout, false);
 }
 
-bool isNetworkSecure(wifi_auth_mode_t encryptionType) {
-  // Devuelve true si la red está protegida, false si es abierta
-  return (encryptionType != WIFI_AUTH_OPEN);
-}
+void tryConnectSTA(const bool updateDisplay = false) {
+  const ConfigManager::NetworkConfig staConfig = config.getSTAConfig();
 
-void sanitizeInput(String &input, size_t maxLength = 32) {
-  // Eliminar caracteres no ASCII y limitar longitud
-  input.replace("\\", "");
-  input.replace("\"", "");
-  input.replace("'", "");
-  input.replace(";", "");
-  if (input.length() > maxLength) input = input.substring(0, maxLength);
-}
+  rgb.setIndicator(Status::PENDING);
 
-void saveWiFiCredentials(const String &ssid, const String &password) {
-  // Leer config.json existente
-  File configFile = LittleFS.open("/config.json", "r");
-  if (!configFile) {
-    Serial.println("Error al leer configuración");
-    return;
+  if (updateDisplay) {
+    menu.tryConnect(staConfig.ssid);
   }
 
-  JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, configFile);
-  configFile.close();
-
-  if (error) {
-    Serial.println("Error parseando configuración");
-    return;
-  }
-
-  // Actualizar valores
-  doc["sta_ssid"] = ssid;
-  doc["sta_password"] = password;
-
-  // Escribir nuevo archivo
-  configFile = LittleFS.open("/config.json", "w");
-  if (!configFile) {
-    Serial.println("Error al guardar configuración");
-    return;
-  }
-
-  serializeJsonPretty(doc, configFile);
-  configFile.close();
-  Serial.println("Credenciales guardadas correctamente");
-}
-
-bool connectSTA() {
-  // Intentar conectarse a la red
-  WiFi.begin(staSSID, staPassword);
-  Serial.print("Conectándose a ");
-  Serial.println(staSSID);
-
-  // Esperar a que se establezca la conexión
-  unsigned int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-
-  Serial.println("");
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Conexión establecida");
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
-    return true;
+  if (wifi.connectSTA(staConfig.ssid, staConfig.password)) {
+    data.wifi = true;
+    rgb.setIndicator(Status::ONLINE);
   } else {
-    Serial.println("No se pudo conectar a la red");
-    return false;
+    data.wifi = false;
+    rgb.setIndicator(Status::OFFLINE);
+  }
+
+  if (updateDisplay) {
+    menu.updateDisplay();
   }
 }
 
-void startWebServer() {
-  // Configurar ESP32 como Access Point
-  WiFi.softAP(apSSID.c_str(), apPassword.c_str());
-  Serial.println("Modo Access Point activado");
-  Serial.print("IP del hotspot: ");
-  Serial.println(WiFi.softAPIP());
+void onConfigEnter() {
+  server.setupRoutes();
+  data.ipAP = server.begin();
+}
 
-  // Ruta para escanear redes disponibles
-  server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
-    int networks = WiFi.scanNetworks(/*async=*/false, /*hidden=*/false,
-                                     /*passive=*/false,
-                                     /*max_ms_per_chan=*/300);
+void onConfigExit() { server.end(); }
 
-    JsonDocument doc;
-    JsonArray networksArray = doc.to<JsonArray>();
+void taskHandleMenu(void* parameter) {
+  bool isSuscribed = false;
 
-    for (int i = 0; i < networks; i++) {
-      JsonObject network = networksArray.add<JsonObject>();
-      network["ssid"] = WiFi.SSID(i);
-      network["rssi"] = WiFi.RSSI(i);
-      network["secure"] =
-          isNetworkSecure(WiFi.encryptionType(i));  // Cambiado a "secure"
+  while (1) {
+    Key key = keypad.getKey();
+
+    if (key != Key::NONE) {
+      menu.handleKey(key);
+      menu.updateDisplay();
     }
 
-    String response;
-    serializeJson(doc, response);
-    request->send(200, "application/json", response);
+    if (isSuscribed) {
+      esp_task_wdt_reset();  // Resetear el watchdog
 
-    WiFi.scanDelete();
-  });
+      if (!server.getIsListening()) {
+        setWatchdogTimeout(5);
+        esp_task_wdt_delete(NULL);  // Eliminar suscripción al watchdog
+        isSuscribed = false;
+      }
+    } else {
+      if (server.getIsListening()) {
+        setWatchdogTimeout(10);
+        esp_task_wdt_add(NULL);  // Suscribir tarea al watchdog
+        isSuscribed = true;
+      }
+    }
 
-  // Ruta para guardar credenciales de la red
-  server.on(
-      "/setup/wifi", HTTP_POST,
-      [](AsyncWebServerRequest *request) {
-        // Verificar si hay datos en _tempObject
-        if (request->_tempObject == nullptr) {
-          request->send(400, "text/plain", "Cuerpo vacío");
-          return;
-        }
-
-        String *body = (String *)request->_tempObject;
-
-        // Parsear JSON
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, *body);
-
-        if (error) {
-          request->send(400, "text/plain", "Error en el formato JSON");
-          delete body;
-          return;
-        }
-
-        String ssid = doc["ssid"].as<String>();
-        String password = doc["password"].as<String>();
-
-        // Sanitizar entradas
-        sanitizeInput(ssid);
-        sanitizeInput(password, 64);  // Mayor longitud para contraseñas
-
-        // Validación básica
-        if (ssid.isEmpty()) {
-          request->send(400, "text/plain", "SSID inválido");
-          delete body;
-          return;
-        }
-
-        // Guardar en config.json
-        saveWiFiCredentials(ssid, password);
-
-        request->send(200, "text/plain", "Configuración guardada");
-        delete body;
-        request->_tempObject = nullptr;
-
-        ESP.restart();
-      },
-      nullptr,
-      [](AsyncWebServerRequest *request, uint8_t *data, size_t len,
-         size_t index, size_t total) {
-        // Acumular el cuerpo usando _tempObject
-        if (index == 0) {
-          request->_tempObject = new String();
-        }
-
-        String *body = (String *)request->_tempObject;
-        body->concat((const char *)data, len);
-      });
-
-  // Servir archivos estáticos
-  server.serveStatic("/", LittleFS, "/www/")
-      .setDefaultFile("index.html")
-      .setCacheControl("max-age=3600");
-
-  // Manejar errores 404
-  server.onNotFound([](AsyncWebServerRequest *request) {
-    // Servir el archivo 404.html desde LittleFA
-    request->send(LittleFS, "/www/404.html", "text/html");
-  });
-
-  // Iniciar el servidor
-  server.begin();
-  Serial.println("Servidor web iniciado");
+    // Delay - 10ms
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
 }
 
 void setup() {
-  esp_task_wdt_init(10, false);  // 10 segundos (ajusta según necesites)
   Serial.begin(115200);
 
-  pinMode(LED, OUTPUT);
-
-  // Inicializar LittleFS
-  if (!LittleFS.begin()) {
-    Serial.println("Error al montar LittleFS");
+  if (!config.init()) {
     ESP.restart();
   }
-  Serial.println("LittleFS montado correctamente");
 
-  // Inicializar la configuración
-  if (!initConfig()) {
-    Serial.println("Error al cargar la configuración");
-    ESP.restart();
-  } else
-    Serial.println("Configuración cargada correctamente");
+  menu.on(MenuManager::Event::CONFIG_ENTER, onConfigEnter);
+  menu.on(MenuManager::Event::CONFIG_EXIT, onConfigExit);
 
-  if (!connectSTA()) {
-    startWebServer();
-  } else {
-    digitalWrite(LED, HIGH);
-  }
+  menu.begin();
+  menu.showWelcome();
+
+  rgb.begin();
+  keypad.begin();
+
+  tryConnectSTA();
+
+  menu.updateDisplay();
+
+  // Tasks
+  xTaskCreatePinnedToCore(taskHandleMenu, "Handle Menu", 10000, NULL, 1, NULL,
+                          0);
 }
 
 void loop() {}
