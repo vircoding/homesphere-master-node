@@ -1,5 +1,6 @@
 #include <esp_task_wdt.h>
 #include <freertos/FreeRTOS.h>
+#include <painlessMesh.h>
 
 #include "ConfigManager.hpp"
 #include "IndicatorManager.hpp"
@@ -7,6 +8,33 @@
 #include "MenuManager.hpp"
 #include "WebServerManager.hpp"
 #include "WiFiManager.hpp"
+
+#define MESH_PREFIX "HomeSphereMesh"
+#define MESH_PASSWORD "123456789"
+#define MESH_PORT 5555
+
+Scheduler scheduler;
+painlessMesh mesh;
+
+void sendMessage() {
+  String msg = "Hi from node 1 ";
+  msg += mesh.getNodeId();
+  mesh.sendBroadcast(msg);
+}
+
+void receivedCallback(uint32_t from, String& msg) {
+  Serial.printf("startHere: Received from %u msg = %s\n", from, msg.c_str());
+}
+
+void newConnectionCallback(uint32_t nodeId) {
+  Serial.printf("--> startHere: New Connection, nodeID = %u\n", nodeId);
+}
+
+void changedConnectionCallback() { Serial.println("Changed connections"); }
+
+void nodeTimeAdjustedCallback(int32_t offset) {
+  Serial.printf("Adjusted time %u. Offset = %d\n", mesh.getNodeTime(), offset);
+}
 
 const uint8_t rgbRed = 16;
 const uint8_t rgbGreen = 17;
@@ -98,6 +126,14 @@ void taskHandleMenu(void* parameter) {
   }
 }
 
+void taskHandleMesh(void* parameter) {
+  while (1) {
+    mesh.update();
+    // Delay - 10ms
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -118,9 +154,20 @@ void setup() {
 
   menu.updateDisplay();
 
+  // mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC |
+  // COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
+  mesh.setDebugMsgTypes(ERROR | STARTUP);
+  mesh.init(MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT);
+  mesh.onReceive(&receivedCallback);
+  mesh.onNewConnection(&newConnectionCallback);
+  mesh.onChangedConnections(&changedConnectionCallback);
+  mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
+
   // Tasks
   xTaskCreatePinnedToCore(taskHandleMenu, "Handle Menu", 10000, NULL, 1, NULL,
                           0);
+  xTaskCreatePinnedToCore(taskHandleMesh, "Handle Mesh", 4096, NULL, 1, NULL,
+                          1);
 }
 
 void loop() {}
