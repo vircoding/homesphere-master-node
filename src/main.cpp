@@ -13,7 +13,6 @@
 #define MESH_PASSWORD "123456789"
 #define MESH_PORT 5555
 
-Scheduler scheduler;
 painlessMesh mesh;
 
 void sendMessage() {
@@ -126,16 +125,17 @@ void taskHandleMenu(void* parameter) {
   }
 }
 
-void taskHandleMesh(void* parameter) {
-  while (1) {
-    mesh.update();
-    // Delay - 10ms
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-}
+// void taskHandleMesh(void* parameter) {
+//   while (1) {
+//     mesh.update();
+//     // Delay - 10ms
+//     vTaskDelay(pdMS_TO_TICKS(10));
+//   }
+// }
 
 void setup() {
   Serial.begin(115200);
+  wifi.modeAPSTA();
 
   if (!config.init()) {
     ESP.restart();
@@ -154,20 +154,18 @@ void setup() {
 
   menu.updateDisplay();
 
-  // mesh.setDebugMsgTypes( ERROR | MESH_STATUS | CONNECTION | SYNC |
-  // COMMUNICATION | GENERAL | MSG_TYPES | REMOTE ); // all types on
-  mesh.setDebugMsgTypes(ERROR | STARTUP);
-  mesh.init(MESH_PREFIX, MESH_PASSWORD, &scheduler, MESH_PORT);
-  mesh.onReceive(&receivedCallback);
-  mesh.onNewConnection(&newConnectionCallback);
-  mesh.onChangedConnections(&changedConnectionCallback);
-  mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
+  // mesh.setDebugMsgTypes(ERROR | STARTUP);
+  // mesh.init(MESH_PREFIX, MESH_PASSWORD, MESH_PORT);
+  // mesh.onReceive(&receivedCallback);
+  // mesh.onNewConnection(&newConnectionCallback);
+  // mesh.onChangedConnections(&changedConnectionCallback);
+  // mesh.onNodeTimeAdjusted(&nodeTimeAdjustedCallback);
 
   // Tasks
   xTaskCreatePinnedToCore(taskHandleMenu, "Handle Menu", 10000, NULL, 1, NULL,
                           0);
-  xTaskCreatePinnedToCore(taskHandleMesh, "Handle Mesh", 4096, NULL, 1, NULL,
-                          1);
+  // xTaskCreatePinnedToCore(taskHandleMesh, "Handle Mesh", 4096, NULL, 1, NULL,
+  //                         1);
 }
 
 void loop() {}
