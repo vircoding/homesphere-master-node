@@ -1,5 +1,7 @@
 #include "MenuManager.hpp"
 
+#include <cmath>
+
 #include "KeypadManager.hpp"
 #include "Utils.hpp"
 
@@ -155,6 +157,18 @@ void MenuManager::on(Event event, std::function<void()> callback) {
   _callbacks[event] = callback;
 }
 
+void MenuManager::updateData() {
+  switch (_currentState) {
+    case State::SENSOR:
+      _lcd.clear();
+      _showSensor();
+      break;
+
+    default:
+      break;
+  }
+}
+
 void MenuManager::_trigger(Event event) {
   auto it = _callbacks.find(event);
 
@@ -200,11 +214,11 @@ void MenuManager::_showSensor() {
   if (_sensorScreen == 0) {
     _lcd.print("Temperatura");
     _lcd.setCursor(0, 1);
-    _lcd.print("28.5C");
+    _lcd.printf("%sC", String(round(_data.temp * 10) / 10).c_str());
   } else {
     _lcd.print("Humedad");
     _lcd.setCursor(0, 1);
-    _lcd.print("60%");
+    _lcd.printf("%s%%", String(round(_data.hum)).c_str());
   }
 }
 

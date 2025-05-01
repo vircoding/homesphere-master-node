@@ -21,6 +21,8 @@ bool ConfigManager::_loadConfig() {
   _apConfig.password = doc["ap_password"].as<String>();
   _staConfig.ssid = doc["sta_ssid"].as<String>();
   _staConfig.password = doc["sta_password"].as<String>();
+  _meshConfig.ssid = doc["mesh_ssid"].as<String>();
+  _meshConfig.password = doc["mesh_password"].as<String>();
 
   configFile.close();
   return true;

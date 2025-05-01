@@ -31,6 +31,8 @@ class MenuManager {
     bool wifi;
     bool internet;
     String ipAP;
+    float temp;
+    float hum;
   };
 
   struct MenuItem {
@@ -47,6 +49,8 @@ class MenuManager {
   void showWelcome();
   void tryConnect(const String& ssid);
   void on(Event event, std::function<void()> callback);
+  void updateData();
+  State getState() const { return _currentState; };
 
  private:
   LiquidCrystal _lcd;

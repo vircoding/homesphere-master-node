@@ -5,6 +5,7 @@
 #include "IndicatorManager.hpp"
 #include "KeypadManager.hpp"
 #include "MenuManager.hpp"
+#include "NowManager.hpp"
 #include "WebServerManager.hpp"
 #include "WiFiManager.hpp"
 
@@ -22,15 +23,16 @@ const uint8_t lcdD5 = 26;
 const uint8_t lcdD6 = 25;
 const uint8_t lcdD7 = 33;
 
-MenuManager::Data data;
-uint32_t wdtTimeout = 5;  // Valor inicial (segundos)
+MenuManager::Data globalData;
+uint32_t wdtTimeout = 5;
 
 ConfigManager config;
 WiFiManager wifi;
 WebServerManager server(config, wifi);
 IndicatorManager rgb(rgbRed, rgbGreen, rgbBlue);
 KeypadManager keypad(keypadUp, keypadDown, keypadBack, keypadEnter);
-MenuManager menu(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7, server, data);
+MenuManager menu(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7, server, globalData);
+NowManager now;
 
 void setWatchdogTimeout(uint32_t new_timeout) {
   wdtTimeout = new_timeout;
@@ -47,10 +49,10 @@ void tryConnectSTA(const bool updateDisplay = false) {
   }
 
   if (wifi.connectSTA(staConfig.ssid, staConfig.password)) {
-    data.wifi = true;
+    globalData.wifi = true;
     rgb.setIndicator(Status::ONLINE);
   } else {
-    data.wifi = false;
+    globalData.wifi = false;
     rgb.setIndicator(Status::OFFLINE);
   }
 
@@ -59,12 +61,25 @@ void tryConnectSTA(const bool updateDisplay = false) {
   }
 }
 
-void onConfigEnter() {
+void onConfigEnterCallback() {
   server.setupRoutes();
-  data.ipAP = server.begin();
+  globalData.ipAP = server.begin();
 }
 
-void onConfigExit() { server.end(); }
+void onConfigExitCallback() { server.end(); }
+
+void onReceivedCallback(const uint8_t* mac_addr, const uint8_t* data,
+                        int data_len) {
+  NowManager::TemperatureData* recvData = (NowManager::TemperatureData*)data;
+  Serial.print("Dato recibido de nodo: ");
+  Serial.println(recvData->node_id);
+
+  Serial.printf("Temperatura: %fC\n", recvData->temp);
+  Serial.printf("Humedad: %f%\n", recvData->hum);
+
+  globalData.temp = recvData->temp;
+  globalData.hum = recvData->hum;
+}
 
 void taskHandleMenu(void* parameter) {
   bool isSuscribed = false;
@@ -98,15 +113,25 @@ void taskHandleMenu(void* parameter) {
   }
 }
 
+void taskUpdateMenu(void* parameter) {
+  while (1) {
+    menu.updateData();
+
+    // Delay - 10s
+    vTaskDelay(pdMS_TO_TICKS(3000));
+  }
+}
+
 void setup() {
   Serial.begin(115200);
+  wifi.modeAPSTA();
 
   if (!config.init()) {
     ESP.restart();
   }
 
-  menu.on(MenuManager::Event::CONFIG_ENTER, onConfigEnter);
-  menu.on(MenuManager::Event::CONFIG_EXIT, onConfigExit);
+  menu.on(MenuManager::Event::CONFIG_ENTER, onConfigEnterCallback);
+  menu.on(MenuManager::Event::CONFIG_EXIT, onConfigExitCallback);
 
   menu.begin();
   menu.showWelcome();
@@ -114,12 +139,15 @@ void setup() {
   rgb.begin();
   keypad.begin();
 
-  tryConnectSTA();
+  now.init();
+  now.onReceived(onReceivedCallback);
 
   menu.updateDisplay();
 
   // Tasks
   xTaskCreatePinnedToCore(taskHandleMenu, "Handle Menu", 10000, NULL, 1, NULL,
+                          0);
+  xTaskCreatePinnedToCore(taskUpdateMenu, "Update Menu", 4096, NULL, 1, NULL,
                           0);
 }
 

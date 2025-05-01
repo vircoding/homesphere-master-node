@@ -9,8 +9,8 @@ WebServerManager::WebServerManager(ConfigManager& config, WiFiManager& wifi)
     : _config(config), _wifi(wifi) {}
 
 String WebServerManager::begin() {
-  const String ip =
-      _wifi.startAP(_config.getAPConfig().ssid, _config.getAPConfig().password);
+  const ConfigManager::NetworkConfig apConfig = _config.getAPConfig();
+  const String ip = _wifi.startAP(apConfig.ssid, apConfig.password);
 
   _server.begin();
   _isListening = true;

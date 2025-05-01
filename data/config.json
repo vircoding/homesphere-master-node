@@ -1,6 +1,8 @@
 {
-  "ap_ssid": "ESP32-WebServer",
+  "ap_ssid": "HomeSphere Config",
   "ap_password": "123456789",
-  "sta_ssid": "",
-  "sta_password": ""
+  "sta_ssid": "VIR | iPhone 11 Pro",
+  "sta_password": "Luismi9556/",
+  "mesh_ssid": "HomeSphere Mesh",
+  "mesh_password": "123456789"
 }

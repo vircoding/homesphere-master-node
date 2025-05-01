@@ -2,18 +2,16 @@
 
 #include "Utils.hpp"
 
-String WiFiManager::startAP(const String& ssid, const String& password) {
-  WiFi.mode(WIFI_MODE_AP);
-  WiFi.softAP(ssid.c_str(), password.c_str());
+void WiFiManager::modeAPSTA() { WiFi.mode(WIFI_AP_STA); }
 
+String WiFiManager::startAP(const String& ssid, const String& password) {
+  WiFi.softAP(ssid.c_str(), password.c_str());
   return WiFi.softAPIP().toString();
 }
 
-void WiFiManager::closeAP() { WiFi.eraseAP(); }
+void WiFiManager::closeAP() { WiFi.softAPdisconnect(); }
 
 bool WiFiManager::connectSTA(const String& ssid, const String& password) {
-  WiFi.mode(WIFI_MODE_STA);
-
   Serial.print("Network: ");
   Serial.println(ssid.c_str());
   Serial.print("Password: ");
@@ -56,6 +54,7 @@ void WiFiManager::scanNetworks() {
     result.secure = isNetworkSecure(WiFi.encryptionType(i));
     _scanResults.push_back(result);
   }
+
   WiFi.scanDelete();
 }
 

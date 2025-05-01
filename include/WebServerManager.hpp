@@ -7,12 +7,7 @@
 
 class WebServerManager {
  public:
-  struct PartialConfig {
-    String ssid;
-    String password;
-  };
-
-  WebServerManager(ConfigManager& configManager, WiFiManager& wifiManager);
+  WebServerManager(ConfigManager& config, WiFiManager& wifi);
   String begin();
   void end();
   void setupRoutes();
@@ -23,5 +18,5 @@ class WebServerManager {
   AsyncWebServer _server{80};
   ConfigManager& _config;
   WiFiManager& _wifi;
-  PartialConfig _partialConfig;
+  ConfigManager::NetworkConfig _partialConfig;
 };

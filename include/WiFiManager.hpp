@@ -13,6 +13,7 @@ class WiFiManager {
     bool secure;
   };
 
+  void modeAPSTA();
   String startAP(const String& ssid, const String& password);
   void closeAP();
   bool connectSTA(const String& ssid, const String& password);
