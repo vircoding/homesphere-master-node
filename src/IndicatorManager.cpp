@@ -13,9 +13,11 @@ void IndicatorManager::begin() {
   ledcAttachPin(_RED_PIN, 0);    // Red en canal 0
   ledcAttachPin(_GREEN_PIN, 1);  // Green en canal 1
   ledcAttachPin(_BLUE_PIN, 2);   // Blue en canal 2
+
+  this->set(Status::OFF);
 }
 
-void IndicatorManager::setIndicator(Status status) {
+void IndicatorManager::set(Status status) {
   switch (status) {
     case Status::ONLINE:
       _setColor(0, 0, 255);

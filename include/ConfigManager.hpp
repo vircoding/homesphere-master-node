@@ -11,15 +11,14 @@ class ConfigManager {
 
   bool init();
   bool saveSTAConfig(const String& ssid, const String& password);
-
+  bool saveNodeConfig(const uint8_t* mac, const uint8_t nodeType,
+                      const uint8_t* firmwareVersion);
   NetworkConfig getAPConfig() const { return _apConfig; }
   NetworkConfig getSTAConfig() const { return _staConfig; }
-  NetworkConfig getMeshConfig() const { return _meshConfig; }
 
  private:
   NetworkConfig _apConfig;
   NetworkConfig _staConfig;
-  NetworkConfig _meshConfig;
 
   bool _loadConfig();
   bool _writeConfig(const JsonDocument& doc);

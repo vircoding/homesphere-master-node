@@ -13,10 +13,10 @@ void KeypadManager::begin() {
   _backDebouncer.attach(_BACK_PIN, INPUT_PULLUP);
   _enterDebouncer.attach(_ENTER_PIN, INPUT_PULLUP);
 
-  _upDebouncer.interval(50);
-  _downDebouncer.interval(50);
-  _backDebouncer.interval(50);
-  _enterDebouncer.interval(50);
+  _upDebouncer.interval(DEBOUNCE_INTERVAL);
+  _downDebouncer.interval(DEBOUNCE_INTERVAL);
+  _backDebouncer.interval(DEBOUNCE_INTERVAL);
+  _enterDebouncer.interval(DEBOUNCE_INTERVAL);
 }
 
 Key KeypadManager::getKey() {

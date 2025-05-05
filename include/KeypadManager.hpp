@@ -12,6 +12,8 @@ class KeypadManager {
   Key getKey();
 
  private:
+  static constexpr uint8_t DEBOUNCE_INTERVAL = 50;
+
   Bounce _upDebouncer;
   Bounce _downDebouncer;
   Bounce _backDebouncer;

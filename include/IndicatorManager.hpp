@@ -14,7 +14,7 @@ class IndicatorManager {
  public:
   IndicatorManager(uint8_t redPin, uint8_t greenPin, uint8_t bluePin);
   void begin();
-  void setIndicator(Status status);
+  void set(Status status);
 
  private:
   const uint8_t _RED_PIN;
