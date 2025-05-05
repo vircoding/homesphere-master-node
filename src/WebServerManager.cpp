@@ -15,8 +15,6 @@ String WebServerManager::begin() {
   _server.begin();
   _isListening = true;
 
-  Serial.println("Web Server iniciado");
-
   return ip;
 }
 
@@ -25,8 +23,6 @@ void WebServerManager::end() {
 
   _server.end();
   _isListening = false;
-
-  Serial.println("Web Server finalizado");
 }
 
 void WebServerManager::setupRoutes() {
