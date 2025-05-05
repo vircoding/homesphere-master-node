@@ -1,8 +1,12 @@
 {
   "ap_ssid": "HomeSphere Config",
   "ap_password": "123456789",
-  "sta_ssid": "VIR | iPhone 11 Pro",
-  "sta_password": "Luismi9556/",
-  "mesh_ssid": "HomeSphere Mesh",
-  "mesh_password": "123456789"
+  "sta_ssid": "",
+  "sta_password": "",
+  "nodes": {
+    "mac": "FF:FF:FF:FF:FF:FF",
+    "node_type": "11",
+    "device_name": "Sensor 1",
+    "firmware_version": "1.0.0"
+  }
 }
