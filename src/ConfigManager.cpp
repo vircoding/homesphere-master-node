@@ -24,6 +24,23 @@ bool ConfigManager::_loadConfig() {
   _staConfig.ssid = doc["sta_ssid"].as<String>();
   _staConfig.password = doc["sta_password"].as<String>();
 
+  JsonArray nodes = doc["nodes"].as<JsonArray>();
+  for (JsonObject node : nodes) {
+    NodeInfo newNode;
+    stringToMac(node["mac"], newNode.mac);
+    newNode.nodeType = node["node_type"].as<uint8_t>();
+    newNode.deviceName = node["device_name"].as<String>();
+    if (!stringToFirmwareVersion(node["firmware_version"],
+                                 newNode.firmwareVersion)) {
+      Serial.println("Error al convertir firmware version");
+      newNode.firmwareVersion[0] = 0;
+      newNode.firmwareVersion[1] = 0;
+      newNode.firmwareVersion[2] = 0;
+    }
+
+    _nodes.push_back(newNode);
+  }
+
   configFile.close();
   return true;
 }
@@ -77,8 +94,6 @@ bool ConfigManager::saveNodeConfig(const uint8_t* mac, const uint8_t nodeType,
     newNode["device_name"] = "Sens-Temp";
     newNode["firmware_version"] = firmwareVersionToString(firmwareVersion);
   }
-
-  serializeJsonPretty(doc, Serial);
 
   return _writeConfig(doc);
 }

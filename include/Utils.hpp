@@ -9,6 +9,8 @@ String formatBooleanToText(const bool data);
 String macToString(const uint8_t* mac);
 void stringToMac(const String& macStr, uint8_t* macDest);
 String firmwareVersionToString(const uint8_t* firmwareVersion);
+bool stringToFirmwareVersion(const String& firmwareVersionStr,
+                             uint8_t* firmwareVersionDest);
 uint8_t calcCRC8(const uint8_t* data, size_t length);
 
 template <typename T>

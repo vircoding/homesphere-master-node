@@ -59,12 +59,14 @@ void handleMenuTask(void* parameter);
 void updateMenuTask(void* parameter);
 void blinkRGBTask(void* parameter);
 void sendSyncBroadcastTask(void* parameter);
+void enterSyncMode();
 void endSyncMode();
-void onLongButtonPressCallback();
+void onLongButtonPressCallback() { enterSyncMode(); };
 void onSimpleButtonPressCallback() { endSyncMode(); };
 void onRegistrationReceivedCallback(const uint8_t* mac, const uint8_t* data,
                                     int length);
 void syncModeTimeoutCallback(TimerHandle_t xTimer) { endSyncMode(); };
+void registerAllNodes(const uint8_t size);
 
 void setup() {
   Serial.begin(115200);
@@ -91,6 +93,11 @@ void setup() {
                 onLongButtonPressCallback);
 
   now.init();
+
+  Serial.printf("Cantidad de nodos en /config.json: %d\n",
+                config.getNodeLength());
+  registerAllNodes(config.getNodeLength());
+
   // now.onReceived(onReceivedCallback);
 
   menu.updateDisplay();
@@ -204,20 +211,22 @@ void blinkRGBTask(void* parameter) {
 
 void sendSyncBroadcastTask(void* parameter) {
   while (1) {
-    now.sendSyncBroadcastMsg();
+    if (now.sendSyncBroadcastMsg()) {
+      Serial.println("Mensaje SyncBroadcast enviado");
+    } else
+      Serial.println("Error enviando el mensaje Syncroadcast");
 
-    vTaskDelay(pdMS_TO_TICKS(10000));  // 10s
+    vTaskDelay(
+        pdMS_TO_TICKS(NowManager::SEND_SYNC_BROADCAST_MSG_INTERVAL));  // 10s
   }
 }
 
-void onLongButtonPressCallback() {
+void enterSyncMode() {
   if (blinkRGBTaskHandler == NULL && sendSyncBroadcastTaskHandler == NULL) {
-    if (!now.reset()) return;
+    if (!now.reset()) ESP.restart();
 
-    const uint8_t broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     if (!now.registerBroadcastPeer()) return;
 
-    now.unsuscribeOnReceived();
     now.onReceived(onRegistrationReceivedCallback);
 
     xTaskCreatePinnedToCore(blinkRGBTask, "Blink LED", 2048, NULL, 2,
@@ -226,7 +235,8 @@ void onLongButtonPressCallback() {
                             NULL, 1, &sendSyncBroadcastTaskHandler, 1);
 
     syncModeTimeoutTimerHandler = xTimerCreate(
-        "Sync Mode Timeout", pdMS_TO_TICKS(30000), pdFALSE, (void*)0,
+        "Sync Mode Timeout", pdMS_TO_TICKS(NowManager::SYNC_MODE_TIMEOUT),
+        pdFALSE, (void*)0,
         syncModeTimeoutCallback);  // 30s
 
     if (syncModeTimeoutTimerHandler != NULL)
@@ -243,10 +253,25 @@ void onRegistrationReceivedCallback(const uint8_t* mac, const uint8_t* data,
 
     if (verifyCRC8(*msg) &&
         config.saveNodeConfig(mac, msg->nodeType, msg->firmwareVersion) &&
-        now.registerPeer(mac)) {
-      now.sendConfirmRegistrationMsg(mac);
+        now.addDevice(mac, msg->nodeType, msg->firmwareVersion)) {
+      if (now.sendConfirmRegistrationMsg(mac)) {
+        Serial.println("Mensaje ConfirmRegistration enviado");
+      } else {
+        Serial.println("Error enviando el mensaje ConfirmRegistration");
+      }
     }
+
+    endSyncMode();
   }
+}
+
+void registerAllNodes(const uint8_t size) {
+  for (uint8_t i = 0; i < size; i++) {
+    ConfigManager::NodeInfo node = config.getNode(i);
+    now.addDevice(node.mac, node.nodeType, node.firmwareVersion);
+  }
+
+  now.printAllDevices();
 }
 
 void endSyncMode() {

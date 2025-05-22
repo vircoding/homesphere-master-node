@@ -20,28 +20,20 @@ bool NowManager::stop() {
 }
 
 bool NowManager::reset() {
-  esp_err_t result;
-
   // Eliminar todos los peers
   for (auto& device : _pairedDevices) {
-    Serial.println("Hereeeeeee 1");
-
-    result = esp_now_del_peer(device.mac);
-    if (result != ESP_OK) {
-      Serial.printf("Error eliminando peer %s: %s\n", macToString(device.mac),
-                    esp_err_to_name(result));
+    if (!removeDevice(device.mac)) {
+      Serial.printf("Error eliminando peer %s\n",
+                    macToString(device.mac).c_str());
       return false;
     }
   }
 
-  // Eliminar masterPeer si existe
+  // Eliminar broadcast peer si existe
   if (_isBroadcastPeerRegistered) {
-    Serial.println("Hereeeeeee 2");
-
-    result = esp_now_del_peer(_broadcastMac);
-    if (result != ESP_OK) {
-      Serial.printf("Error eliminando peer %s: %s\n",
-                    macToString(_broadcastMac), esp_err_to_name(result));
+    if (esp_now_del_peer(_broadcastMac) != ESP_OK) {
+      Serial.printf("Error eliminando peer %s\n",
+                    macToString(_broadcastMac).c_str());
       return false;
     }
 
@@ -49,24 +41,20 @@ bool NowManager::reset() {
   }
 
   // Desregistrar callbacks
-  result = esp_now_unregister_recv_cb();
-  if (result != ESP_OK) {
-    Serial.printf("Error desregistrando callback RX: %s\n",
-                  esp_err_to_name(result));
+  if (esp_now_unregister_recv_cb() != ESP_OK) {
+    Serial.println("Error desregistrando callback RX");
     return false;
   }
 
-  result = esp_now_unregister_send_cb();
-  if (result != ESP_OK) {
-    Serial.printf("Error desregistrando callback TX: %s\n",
-                  esp_err_to_name(result));
+  if (esp_now_unregister_send_cb() != ESP_OK) {
+    Serial.println("Error desregistrando callback TX");
     return false;
   }
 
   return true;
 }
 
-bool NowManager::registerPeer(const uint8_t* mac) {
+bool NowManager::_registerPeer(const uint8_t* mac) {
   esp_now_peer_info_t peerInfo;
   memset(&peerInfo, 0, sizeof(peerInfo));
   memcpy(peerInfo.peer_addr, mac, 6);
@@ -152,8 +140,8 @@ size_t NowManager::_getMessageSize(MessageType type) {
   }
 }
 
-bool NowManager::_addDevice(const uint8_t* mac, uint8_t nodeType,
-                            uint8_t* firmwareVersion) {
+bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
+                           const uint8_t* firmwareVersion) {
   // Verificar si ya existe
   auto it = std::find_if(
       _pairedDevices.begin(), _pairedDevices.end(),
@@ -164,7 +152,7 @@ bool NowManager::_addDevice(const uint8_t* mac, uint8_t nodeType,
     return false;
   }
 
-  if (_pairedDevices.size() < 12) return false;
+  if (_pairedDevices.size() >= 12) return false;
 
   // Añadir nuevo nodo
   DeviceInfo newDevice;
@@ -175,5 +163,52 @@ bool NowManager::_addDevice(const uint8_t* mac, uint8_t nodeType,
 
   _pairedDevices.push_back(newDevice);
 
+  // Registrar Peer
+  if (!_registerPeer(mac)) {
+    _pairedDevices.pop_back();
+    return false;
+  }
+
   return true;
+}
+
+void NowManager::printAllDevices() {
+  int i = 0;
+  Serial.println("Dispositivos vinculados: ");
+  for (const auto& device : _pairedDevices) {
+    Serial.printf("%d - MAC: %s, Tipo: %d, Ultima vez: %lu\n", i,
+                  macToString(device.mac).c_str(), device.nodeType,
+                  device.lastSeen);
+
+    i++;
+  }
+}
+
+NowManager::DeviceInfo* NowManager::findDevice(const uint8_t* mac) {
+  auto it = std::find_if(
+      _pairedDevices.begin(), _pairedDevices.end(),
+      [&mac](const DeviceInfo& d) { return memcmp(d.mac, mac, 6) == 0; });
+
+  return (it != _pairedDevices.end()) ? &(*it) : nullptr;
+}
+
+bool NowManager::removeDevice(const uint8_t* mac) {
+  auto it = std::find_if(
+      _pairedDevices.begin(), _pairedDevices.end(),
+      [&mac](const DeviceInfo& d) { return memcmp(d.mac, mac, 6) == 0; });
+
+  if (it != _pairedDevices.end()) {
+    // esp_err_t result;
+    // result = esp_now_del_peer(mac);
+
+    if (esp_now_del_peer(mac) != ESP_OK) {
+      Serial.println("Error en la eliminacion del peer");
+      return false;
+    }
+    _pairedDevices.erase(it);
+
+    return true;
+  }
+
+  return false;
 }

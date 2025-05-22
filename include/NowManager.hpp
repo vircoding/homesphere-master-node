@@ -8,6 +8,9 @@
 
 class NowManager {
  public:
+  static constexpr uint32_t SYNC_MODE_TIMEOUT = 30000;                // 30s
+  static constexpr uint32_t SEND_SYNC_BROADCAST_MSG_INTERVAL = 5000;  // 5s
+
   enum class MessageType {
     SYNC_BROADCAST = 0x55,
     REGISTRATION = 0xAA,
@@ -51,7 +54,6 @@ class NowManager {
   bool init();
   bool stop();
   bool reset();
-  bool registerPeer(const uint8_t* mac);
   bool registerBroadcastPeer();
   void onSend(esp_now_send_cb_t callback);
   void unsuscribeOnSend();
@@ -61,15 +63,17 @@ class NowManager {
   bool sendConfirmRegistrationMsg(const uint8_t* mac);
   static bool validateMessage(MessageType expectedType, const uint8_t* data,
                               size_t length);
+  DeviceInfo* findDevice(const uint8_t* mac);
+  bool removeDevice(const uint8_t* mac);
+  bool addDevice(const uint8_t* mac, const uint8_t nodeType,
+                 const uint8_t* firmwareVersion);
+  void printAllDevices();
 
  private:
-  static constexpr uint32_t SYNC_MODE_TIMEOUT = 30000;
-
   uint8_t _broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
   std::vector<DeviceInfo> _pairedDevices;
   bool _isBroadcastPeerRegistered = false;
 
   static size_t _getMessageSize(MessageType type);
-  bool _addDevice(const uint8_t* mac, uint8_t nodeType,
-                  uint8_t* firmwareVersion);
+  bool _registerPeer(const uint8_t* mac);
 };
