@@ -5,10 +5,7 @@
 #include "Utils.hpp"
 
 bool NowManager::init() {
-  if (esp_now_init() != ESP_OK) {
-    Serial.println("Error inicializando ESP-NOW");
-    return false;
-  }
+  if (esp_now_init() != ESP_OK) return false;
 
   return true;
 }
@@ -22,34 +19,23 @@ bool NowManager::stop() {
 bool NowManager::reset() {
   // Eliminar todos los peers
   for (auto& device : _pairedDevices) {
-    if (!removeDevice(device.mac)) {
-      Serial.printf("Error eliminando peer %s\n",
-                    macToString(device.mac).c_str());
-      return false;
-    }
+    if (!removeDevice(device.mac)) return false;
   }
+
+  // Vaciar sensor list
+  _sensors.clear();
 
   // Eliminar broadcast peer si existe
   if (_isBroadcastPeerRegistered) {
-    if (esp_now_del_peer(_broadcastMac) != ESP_OK) {
-      Serial.printf("Error eliminando peer %s\n",
-                    macToString(_broadcastMac).c_str());
-      return false;
-    }
+    if (esp_now_del_peer(_broadcastMac) != ESP_OK) return false;
 
     _isBroadcastPeerRegistered = false;
   }
 
   // Desregistrar callbacks
-  if (esp_now_unregister_recv_cb() != ESP_OK) {
-    Serial.println("Error desregistrando callback RX");
+  if (esp_now_unregister_recv_cb() != ESP_OK ||
+      esp_now_unregister_send_cb() != ESP_OK)
     return false;
-  }
-
-  if (esp_now_unregister_send_cb() != ESP_OK) {
-    Serial.println("Error desregistrando callback TX");
-    return false;
-  }
 
   return true;
 }
@@ -62,10 +48,7 @@ bool NowManager::_registerPeer(const uint8_t* mac) {
   peerInfo.ifidx = WIFI_IF_STA;
   peerInfo.encrypt = false;
 
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Error registrando peer");
-    return false;
-  }
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) return false;
 
   return true;
 }
@@ -78,10 +61,7 @@ bool NowManager::registerBroadcastPeer() {
   peerInfo.ifidx = WIFI_IF_STA;
   peerInfo.encrypt = false;
 
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Error registrando peer");
-    return false;
-  }
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) return false;
 
   _isBroadcastPeerRegistered = true;
   return true;
@@ -135,22 +115,23 @@ size_t NowManager::_getMessageSize(MessageType type) {
     case MessageType::CONFIRM_REGISTRATION:
       return sizeof(ConfirmRegistrationMsg);
 
+    case MessageType::TEMPERATURE_HUMIDITY:
+      return sizeof(TemperatureHumidityMsg);
+
     default:
       return 0;  // Tipo desconocido
   }
 }
 
 bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
+                           const String& deviceName,
                            const uint8_t* firmwareVersion) {
   // Verificar si ya existe
   auto it = std::find_if(
       _pairedDevices.begin(), _pairedDevices.end(),
       [&mac](const DeviceInfo& d) { return memcmp(d.mac, mac, 6) == 0; });
 
-  if (it != _pairedDevices.end()) {
-    Serial.println("Dispositivo ya registrado");
-    return false;
-  }
+  if (it != _pairedDevices.end()) return false;
 
   if (_pairedDevices.size() >= 12) return false;
 
@@ -160,6 +141,7 @@ bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
   memcpy(newDevice.firmwareVersion, firmwareVersion, 3);
   newDevice.nodeType = nodeType;
   newDevice.lastSeen = millis();
+  newDevice.deviceName = deviceName;
 
   _pairedDevices.push_back(newDevice);
 
@@ -167,6 +149,24 @@ bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
   if (!_registerPeer(mac)) {
     _pairedDevices.pop_back();
     return false;
+  }
+
+  switch (static_cast<NodeType>(newDevice.nodeType)) {
+    case NodeType::TEMPERATURE:
+      SensorData data;
+      memcpy(data.mac, mac, 6);
+      data.deviceName = newDevice.deviceName;
+      data.variable = "Temp";
+      data.units = "C";
+      data.type = SensorValueType::FLOAT;
+      data.value.f = NAN;
+      _sensors.push_back(data);
+      data.variable = "Hum";
+      data.units = "%";
+      data.type = SensorValueType::FLOAT;
+      data.value.f = NAN;
+      _sensors.push_back(data);
+      break;
   }
 
   return true;
@@ -182,6 +182,71 @@ void NowManager::printAllDevices() {
 
     i++;
   }
+
+  i = 0;
+  Serial.println("Sensores vinculados: ");
+  for (const auto& sensor : _sensors) {
+    Serial.printf("%d - MAC: %s, Nombre: %s, Valor: %f\n", i,
+                  macToString(sensor.mac).c_str(), sensor.deviceName.c_str(),
+                  sensor.value);
+    i++;
+  }
+}
+
+NowManager::SensorData NowManager::getSensorAt(const int index) const {
+  if (index >= 0 && index < _sensors.size()) {
+    return _sensors.at(index);
+  } else {
+    SensorData data;
+    data.type = SensorValueType::BOOL;
+    data.value.b = false;
+  }
+}
+
+void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
+                                  const bool value) {
+  auto it = std::find_if(
+      _sensors.begin(), _sensors.end(), [&mac, &variable](const SensorData& d) {
+        return memcmp(d.mac, mac, 6) == 0 && d.variable == variable;
+      });
+
+  if (it != _sensors.end()) it.base()->value.b = value;
+}
+
+void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
+                                  const int value) {
+  auto it = std::find_if(
+      _sensors.begin(), _sensors.end(), [&mac, &variable](const SensorData& d) {
+        return memcmp(d.mac, mac, 6) == 0 && d.variable == variable;
+      });
+
+  if (it != _sensors.end()) it.base()->value.i = value;
+}
+
+void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
+                                  const float value) {
+  auto it = std::find_if(
+      _sensors.begin(), _sensors.end(), [&mac, &variable](const SensorData& d) {
+        return memcmp(d.mac, mac, 6) == 0 && d.variable == variable;
+      });
+
+  if (it != _sensors.end()) it.base()->value.f = value;
+}
+
+bool NowManager::isDevicePaired(const uint8_t* mac) {
+  auto it = std::find_if(
+      _pairedDevices.begin(), _pairedDevices.end(),
+      [&mac](const DeviceInfo& d) { return memcmp(d.mac, mac, 6) == 0; });
+
+  return it != _pairedDevices.end();
+}
+
+void NowManager::updateDeviceLastSeen(const uint8_t* mac) {
+  auto it = std::find_if(
+      _pairedDevices.begin(), _pairedDevices.end(),
+      [&mac](const DeviceInfo& d) { return memcmp(d.mac, mac, 6) == 0; });
+
+  if (it != _pairedDevices.end()) it.base()->lastSeen = millis();
 }
 
 NowManager::DeviceInfo* NowManager::findDevice(const uint8_t* mac) {
@@ -198,13 +263,8 @@ bool NowManager::removeDevice(const uint8_t* mac) {
       [&mac](const DeviceInfo& d) { return memcmp(d.mac, mac, 6) == 0; });
 
   if (it != _pairedDevices.end()) {
-    // esp_err_t result;
-    // result = esp_now_del_peer(mac);
+    if (esp_now_del_peer(mac) != ESP_OK) return false;
 
-    if (esp_now_del_peer(mac) != ESP_OK) {
-      Serial.println("Error en la eliminacion del peer");
-      return false;
-    }
     _pairedDevices.erase(it);
 
     return true;

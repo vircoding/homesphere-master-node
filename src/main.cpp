@@ -45,8 +45,9 @@ WebServerManager server(config, wifi);
 IndicatorManager rgb(rgbRed, rgbGreen, rgbBlue);
 KeypadManager keypad(keypadUp, keypadDown, keypadBack, keypadEnter);
 SyncButtonManager syncButton(syncButtonPin);
-MenuManager menu(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7, server, globalData);
 NowManager now;
+MenuManager menu(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7, server, globalData,
+                 now);
 
 // Definitions
 void setWatchdogTimeout(uint32_t newTimeout);
@@ -56,7 +57,6 @@ void onConfigExitCallback();
 void onReceivedCallback(const uint8_t* mac_addr, const uint8_t* data,
                         int length);
 void handleMenuTask(void* parameter);
-void updateMenuTask(void* parameter);
 void blinkRGBTask(void* parameter);
 void sendSyncBroadcastTask(void* parameter);
 void enterSyncMode();
@@ -81,7 +81,7 @@ void setup() {
   menu.on(MenuManager::Event::CONFIG_EXIT, onConfigExitCallback);
 
   menu.begin();
-  menu.showWelcome();
+  menu.showCustomInfoScreen("HomeSphere", "Bienvenid@");
 
   rgb.begin();
   keypad.begin();
@@ -93,19 +93,13 @@ void setup() {
                 onLongButtonPressCallback);
 
   now.init();
-
-  Serial.printf("Cantidad de nodos en /config.json: %d\n",
-                config.getNodeLength());
   registerAllNodes(config.getNodeLength());
+  now.onReceived(onReceivedCallback);
 
-  // now.onReceived(onReceivedCallback);
-
-  menu.updateDisplay();
+  menu.clearCustomInfoScreen();
 
   // Tasks
   xTaskCreatePinnedToCore(handleMenuTask, "Handle Menu", 10000, NULL, 1, NULL,
-                          0);
-  xTaskCreatePinnedToCore(updateMenuTask, "Update Menu", 4096, NULL, 1, NULL,
                           0);
 }
 
@@ -145,17 +139,23 @@ void onConfigEnterCallback() {
 
 void onConfigExitCallback() { server.end(); }
 
-void onReceivedCallback(const uint8_t* mac_addr, const uint8_t* data,
-                        int length) {
-  NowManager::TemperatureData* recvData = (NowManager::TemperatureData*)data;
-  Serial.print("Dato recibido de nodo: ");
-  Serial.println(recvData->node_id);
+void onReceivedCallback(const uint8_t* mac, const uint8_t* data, int length) {
+  // TODO: Validar que la direccion mac este en la lista de paired devices
+  if (!now.isDevicePaired(mac)) return;
 
-  Serial.printf("Temperatura: %fC\n", recvData->temp);
-  Serial.printf("Humedad: %f%\n", recvData->hum);
+  if (NowManager::validateMessage(NowManager::MessageType::TEMPERATURE_HUMIDITY,
+                                  data, length)) {
+    const NowManager::TemperatureHumidityMsg* msg =
+        reinterpret_cast<const NowManager::TemperatureHumidityMsg*>(data);
 
-  globalData.temp = recvData->temp;
-  globalData.hum = recvData->hum;
+    if (verifyCRC8(*msg)) {
+      now.updateSensorData(mac, "Temp", msg->temp);
+      now.updateSensorData(mac, "Hum", msg->hum);
+
+      now.updateDeviceLastSeen(mac);
+      menu.updateData();
+    }
+  }
 }
 
 void handleMenuTask(void* parameter) {
@@ -190,15 +190,6 @@ void handleMenuTask(void* parameter) {
   }
 }
 
-void updateMenuTask(void* parameter) {
-  while (1) {
-    menu.updateData();
-
-    // Delay - 3s
-    vTaskDelay(pdMS_TO_TICKS(3000));
-  }
-}
-
 void blinkRGBTask(void* parameter) {
   while (1) {
     rgb.set(Status::PENDING);
@@ -211,10 +202,7 @@ void blinkRGBTask(void* parameter) {
 
 void sendSyncBroadcastTask(void* parameter) {
   while (1) {
-    if (now.sendSyncBroadcastMsg()) {
-      Serial.println("Mensaje SyncBroadcast enviado");
-    } else
-      Serial.println("Error enviando el mensaje Syncroadcast");
+    now.sendSyncBroadcastMsg();
 
     vTaskDelay(
         pdMS_TO_TICKS(NowManager::SEND_SYNC_BROADCAST_MSG_INTERVAL));  // 10s
@@ -223,6 +211,8 @@ void sendSyncBroadcastTask(void* parameter) {
 
 void enterSyncMode() {
   if (blinkRGBTaskHandler == NULL && sendSyncBroadcastTaskHandler == NULL) {
+    menu.showCustomInfoScreen("Vinculando", "nodo secundario");
+
     if (!now.reset()) ESP.restart();
 
     if (!now.registerBroadcastPeer()) return;
@@ -253,13 +243,9 @@ void onRegistrationReceivedCallback(const uint8_t* mac, const uint8_t* data,
 
     if (verifyCRC8(*msg) &&
         config.saveNodeConfig(mac, msg->nodeType, msg->firmwareVersion) &&
-        now.addDevice(mac, msg->nodeType, msg->firmwareVersion)) {
-      if (now.sendConfirmRegistrationMsg(mac)) {
-        Serial.println("Mensaje ConfirmRegistration enviado");
-      } else {
-        Serial.println("Error enviando el mensaje ConfirmRegistration");
-      }
-    }
+        now.addDevice(mac, msg->nodeType, "Nodo Secundario",
+                      msg->firmwareVersion))
+      now.sendConfirmRegistrationMsg(mac);
 
     endSyncMode();
   }
@@ -268,7 +254,8 @@ void onRegistrationReceivedCallback(const uint8_t* mac, const uint8_t* data,
 void registerAllNodes(const uint8_t size) {
   for (uint8_t i = 0; i < size; i++) {
     ConfigManager::NodeInfo node = config.getNode(i);
-    now.addDevice(node.mac, node.nodeType, node.firmwareVersion);
+    now.addDevice(node.mac, node.nodeType, node.deviceName,
+                  node.firmwareVersion);
   }
 
   now.printAllDevices();
@@ -296,4 +283,8 @@ void endSyncMode() {
 
   // Reiniciar ESP-NOW
   if (!now.reset()) ESP.restart();
+
+  registerAllNodes(config.getNodeLength());
+  now.onReceived(onReceivedCallback);
+  menu.clearCustomInfoScreen();
 }

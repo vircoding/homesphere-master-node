@@ -12,10 +12,8 @@ String WiFiManager::startAP(const String& ssid, const String& password) {
 void WiFiManager::closeAP() { WiFi.softAPdisconnect(); }
 
 bool WiFiManager::connectSTA(const String& ssid, const String& password) {
-  Serial.print("Network: ");
-  Serial.println(ssid.c_str());
-  Serial.print("Password: ");
-  Serial.println(password.c_str());
+  Serial.printf("Network: %s\n", ssid.c_str());
+  Serial.printf("Password: %s\n", password.c_str());
 
   // Implementación de la conexión STA
   WiFi.begin(ssid.c_str(), password.c_str());

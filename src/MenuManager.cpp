@@ -7,12 +7,14 @@
 
 MenuManager::MenuManager(uint8_t lcdRS, uint8_t lcdEN, uint8_t lcdD4,
                          uint8_t lcdD5, uint8_t lcdD6, uint8_t lcdD7,
-                         WebServerManager& server, Data& data)
-    : _lcd(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7), _data(data) {}
+                         WebServerManager& server, Data& data, NowManager& now)
+    : _lcd(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7), _data(data), _now(now) {}
 
 void MenuManager::begin() { _lcd.begin(16, 2); }
 
 void MenuManager::handleKey(Key key) {
+  if (_stopKeypad) return;
+
   switch (_currentState) {
     case State::MAIN:
       if (key == Key::UP && _menuPosition > 0) {
@@ -80,7 +82,9 @@ void MenuManager::handleKey(Key key) {
 
     case State::SENSOR:
       if (key == Key::UP || key == Key::DOWN) {
-        _sensorScreen = (_sensorScreen + 1) % 2;
+        if (_now.getSensorListSize() > 0) {
+          _sensorScreen = (_sensorScreen + 1) % _now.getSensorListSize();
+        }
       } else if (key == Key::BACK) {
         _currentState = State::MAIN;
         _sensorScreen = 0;
@@ -128,13 +132,19 @@ void MenuManager::updateDisplay() {
   }
 }
 
-void MenuManager::showWelcome() {
+void MenuManager::showCustomInfoScreen(const String& line1,
+                                       const String& line2) {
+  _stopKeypad = true;
   _lcd.clear();
-
   _lcd.setCursor(0, 0);
-  _lcd.print("ESP32 System");
+  _lcd.print(line1.c_str());
   _lcd.setCursor(0, 1);
-  _lcd.print("Bienvenid@");
+  _lcd.print(line2.c_str());
+}
+
+void MenuManager::clearCustomInfoScreen() {
+  _stopKeypad = false;
+  updateDisplay();
 }
 
 void MenuManager::tryConnect(const String& ssid) {
@@ -211,14 +221,44 @@ void MenuManager::_showAbout() {
 }
 
 void MenuManager::_showSensor() {
-  if (_sensorScreen == 0) {
-    _lcd.print("Temperatura");
-    _lcd.setCursor(0, 1);
-    _lcd.printf("%sC", String(round(_data.temp * 10) / 10).c_str());
+  const size_t sensorListSize = _now.getSensorListSize();
+
+  if (sensorListSize > 0) {
+    if (_sensorScreen >= 0 && _sensorScreen < _now.getSensorListSize()) {
+      NowManager::SensorData data = _now.getSensorAt(_sensorScreen);
+      bool isValid;
+
+      _lcd.setCursor(0, 0);
+      _lcd.print(data.deviceName);
+      _lcd.setCursor(0, 1);
+
+      switch (data.type) {
+        case NowManager::SensorValueType::BOOL:
+          _lcd.printf("%s: %s", data.variable.c_str(),
+                      formatBooleanToText(data.value.b).c_str());
+          break;
+
+        case NowManager::SensorValueType::INT:
+          isValid = !isnan(data.value.i);
+          _lcd.printf("%s: %s%s", data.variable.c_str(),
+                      isValid ? String(data.value.i).c_str() : "",
+                      isValid ? data.units.c_str() : "");
+          break;
+
+        case NowManager::SensorValueType::FLOAT:
+          isValid = !isnan(data.value.f);
+          _lcd.printf(
+              "%s: %s%s", data.variable.c_str(),
+              isValid ? String(round(data.value.f * 10) / 10).c_str() : "",
+              isValid ? data.units.c_str() : "");
+          break;
+      }
+    }
   } else {
-    _lcd.print("Humedad");
+    _lcd.setCursor(0, 0);
+    _lcd.print("Sin sensores");
     _lcd.setCursor(0, 1);
-    _lcd.printf("%s%%", String(round(_data.hum)).c_str());
+    _lcd.print("vinculados");
   }
 }
 

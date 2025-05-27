@@ -32,7 +32,6 @@ bool ConfigManager::_loadConfig() {
     newNode.deviceName = node["device_name"].as<String>();
     if (!stringToFirmwareVersion(node["firmware_version"],
                                  newNode.firmwareVersion)) {
-      Serial.println("Error al convertir firmware version");
       newNode.firmwareVersion[0] = 0;
       newNode.firmwareVersion[1] = 0;
       newNode.firmwareVersion[2] = 0;
@@ -91,11 +90,13 @@ bool ConfigManager::saveNodeConfig(const uint8_t* mac, const uint8_t nodeType,
     JsonObject newNode = nodes.add<JsonObject>();
     newNode["mac"] = macStr;
     newNode["node_type"] = nodeType;
-    newNode["device_name"] = "Sens-Temp";
+    newNode["device_name"] = "Nodo Secundario";
     newNode["firmware_version"] = firmwareVersionToString(firmwareVersion);
   }
 
-  return _writeConfig(doc);
+  if (!_writeConfig(doc)) return false;
+
+  return _loadConfig();
 }
 
 bool ConfigManager::_writeConfig(const JsonDocument& doc) {

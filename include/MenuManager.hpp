@@ -6,6 +6,7 @@
 #include <map>
 
 #include "KeypadManager.hpp"
+#include "NowManager.hpp"
 #include "WebServerManager.hpp"
 
 class MenuManager {
@@ -31,8 +32,6 @@ class MenuManager {
     bool wifi;
     bool internet;
     String ipAP;
-    float temp;
-    float hum;
   };
 
   struct MenuItem {
@@ -42,11 +41,12 @@ class MenuManager {
 
   MenuManager(uint8_t lcdRS, uint8_t lcdEN, uint8_t lcdD4, uint8_t lcdD5,
               uint8_t lcdD6, uint8_t lcdD7, WebServerManager& server,
-              Data& data);
+              Data& data, NowManager& now);
   void begin();
   void handleKey(Key key);
   void updateDisplay();
-  void showWelcome();
+  void showCustomInfoScreen(const String& line1, const String& line2);
+  void clearCustomInfoScreen();
   void tryConnect(const String& ssid);
   void on(Event event, std::function<void()> callback);
   void updateData();
@@ -55,6 +55,7 @@ class MenuManager {
  private:
   LiquidCrystal _lcd;
   Data& _data;
+  NowManager& _now;
 
   // Variables de estado
   State _currentState = State::MAIN;
@@ -63,13 +64,14 @@ class MenuManager {
   uint8_t _sensorScreen = 0;
   uint8_t _actuatorScreen = 0;
   uint8_t _confirmOption = 0;
+  bool _stopKeypad = false;
 
   // Configuración del menu
   static constexpr uint8_t MAIN_MENU_COUNT = 5;
 
   const MenuItem _mainMenuItems[5] = {
-      {"Estado", State::STATUS},     {"Sensores", State::SENSOR},
-      {"Actuadores", State::ACTION}, {"Configuracion", State::CONFIG_CONFIRM},
+      {"Sensores", State::SENSOR}, {"Actuadores", State::ACTION},
+      {"Estado", State::STATUS},   {"Configuracion", State::CONFIG_CONFIRM},
       {"Acerca de", State::ABOUT},
   };
 
