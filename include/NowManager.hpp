@@ -12,15 +12,19 @@ class NowManager {
   static constexpr uint32_t SEND_SYNC_BROADCAST_MSG_INTERVAL = 5000;  // 5s
 
   enum class NodeType {
-    TEMPERATURE = 0x1A,
-    HUMIDITY = 0x02,
+    TEMPERATURE_HUMIDITY = 0x1A,
+    RELAY = 0x2B,
   };
 
   enum class MessageType {
     SYNC_BROADCAST = 0x55,
     REGISTRATION = 0xAA,
     CONFIRM_REGISTRATION = 0xCC,
-    TEMPERATURE_HUMIDITY = 0x1A
+    TEMPERATURE_HUMIDITY = 0x1A,
+    SET_ACTUATOR = 0xB3,
+    ACTUATOR_STATE = 0x26,
+    SCHEDULE_ACTUATOR = 0x33,
+    PING = 0x11
   };
 
   enum class SensorValueType { FLOAT, INT, BOOL };
@@ -51,6 +55,29 @@ class NowManager {
     float hum;
     uint8_t crc;
   };
+
+  struct SetActuatorMsg {
+    uint8_t msgType = static_cast<uint8_t>(MessageType::SET_ACTUATOR);
+    bool state;
+    uint8_t crc;
+  };
+
+  struct ActuatorStateMsg {
+    uint8_t msgType = static_cast<uint8_t>(MessageType::ACTUATOR_STATE);
+    bool state;
+    uint8_t crc;
+  };
+
+  struct ScheduleActuatorMsg {
+    uint8_t msgType = static_cast<uint8_t>(MessageType::SCHEDULE_ACTUATOR);
+    uint32_t offset;
+    uint32_t duration;
+    uint8_t crc;
+  };
+
+  struct PingMsg {
+    uint8_t msgType = static_cast<uint8_t>(MessageType::PING);
+  };
 #pragma pack(pop)
 
   struct DeviceInfo {
@@ -65,6 +92,7 @@ class NowManager {
   struct SensorData {
     uint8_t mac[6];
     String deviceName;
+    bool isConnected;
     String variable;
     String units;
     SensorValueType type;
@@ -73,6 +101,13 @@ class NowManager {
       int i;
       bool b;
     } value;
+  };
+
+  struct ActuatorData {
+    uint8_t mac[6];
+    String deviceName;
+    bool isConnected;
+    bool state;
   };
 
   bool init();
@@ -85,18 +120,30 @@ class NowManager {
   void unsuscribeOnReceived();
   bool sendSyncBroadcastMsg();
   bool sendConfirmRegistrationMsg(const uint8_t* mac);
+  bool sendSetActuatorMsg(const uint8_t* mac, const bool state);
+  bool sendScheduleActuatorMsg(const uint8_t* mac, const uint32_t offset = 0,
+                               const uint32_t duration = 0xFFFFFFFF);
+  bool sendPingMsg(const uint8_t* mac);
   static bool validateMessage(MessageType expectedType, const uint8_t* data,
                               size_t length);
   DeviceInfo* findDevice(const uint8_t* mac);
   bool removeDevice(const uint8_t* mac);
+  bool removeSensor(const uint8_t* mac, const String& variable);
+  bool removeActuator(const uint8_t* mac);
   bool addDevice(const uint8_t* mac, const uint8_t nodeType,
                  const String& deviceName, const uint8_t* firmwareVersion);
   bool isDevicePaired(const uint8_t* mac);
   void updateDeviceLastSeen(const uint8_t* mac);
   void printAllDevices();
-  std::vector<SensorData> getSensorList() const { return _sensors; };
+  std::vector<DeviceInfo> getDeviceList() const { return _pairedDevices; }
+  std::vector<SensorData> getSensorList() const { return _sensors; }
+  std::vector<ActuatorData> getActuatorList() const { return _actuators; }
   size_t getSensorListSize() const { return _sensors.size(); }
+  size_t getActuatorListSize() const { return _actuators.size(); }
   SensorData getSensorAt(const int index) const;
+  ActuatorData getActuatorAt(const int index) const;
+  bool getIsDataTransferEnabled() const { return _isDataTransferEnabled; }
+  void setDataTransfer(const bool state);
   void updateSensorData(
       const uint8_t* mac, const String& variable,
       const bool value);  // Metodo sobrecargado para sensores binarios
@@ -106,12 +153,17 @@ class NowManager {
   void updateSensorData(
       const uint8_t* mac, const String& variable,
       const float value);  // Metodo sobrecargado para sensores continuos
+  void updateActuatorState(const uint8_t* mac, const bool state);
+  void desconnectSensor(const uint8_t* mac, const String& variable);
+  void desconnectActuator(const uint8_t* mac);
 
  private:
+  bool _isDataTransferEnabled = false;
   uint8_t _broadcastMac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
   bool _isBroadcastPeerRegistered = false;
   std::vector<DeviceInfo> _pairedDevices;
   std::vector<SensorData> _sensors;
+  std::vector<ActuatorData> _actuators;
 
   static size_t _getMessageSize(MessageType type);
   bool _registerPeer(const uint8_t* mac);

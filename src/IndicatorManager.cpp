@@ -1,7 +1,8 @@
 #include "IndicatorManager.hpp"
 
-IndicatorManager::IndicatorManager(uint8_t redPin, uint8_t greenPin,
-                                   uint8_t bluePin)
+IndicatorManager::IndicatorManager(const gpio_num_t redPin,
+                                   const gpio_num_t greenPin,
+                                   const gpio_num_t bluePin)
     : _RED_PIN(redPin), _GREEN_PIN(greenPin), _BLUE_PIN(bluePin) {}
 
 void IndicatorManager::begin() {
@@ -14,7 +15,7 @@ void IndicatorManager::begin() {
   ledcAttachPin(_GREEN_PIN, 1);  // Green en canal 1
   ledcAttachPin(_BLUE_PIN, 2);   // Blue en canal 2
 
-  this->set(Status::OFF);
+  set(Status::OFF);
 }
 
 void IndicatorManager::set(Status status) {

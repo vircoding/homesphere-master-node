@@ -95,6 +95,41 @@ bool NowManager::sendConfirmRegistrationMsg(const uint8_t* mac) {
   return esp_now_send(mac, (uint8_t*)&msg, sizeof(msg)) == ESP_OK;
 }
 
+bool NowManager::sendSetActuatorMsg(const uint8_t* mac, const bool state) {
+  if (!_isDataTransferEnabled) return false;
+
+  NowManager::SetActuatorMsg msg;
+  msg.state = state;
+
+  // Generate CRC8
+  addCRC8(msg);
+
+  return esp_now_send(mac, (uint8_t*)&msg, sizeof(msg)) == ESP_OK;
+}
+
+bool NowManager::sendScheduleActuatorMsg(const uint8_t* mac,
+                                         const uint32_t offset,
+                                         const uint32_t duration) {
+  if (!_isDataTransferEnabled) return false;
+
+  NowManager::ScheduleActuatorMsg msg;
+  msg.offset = offset;
+  msg.duration = duration;
+
+  // Generate CRC8
+  addCRC8(msg);
+
+  return esp_now_send(mac, (uint8_t*)&msg, sizeof(msg)) == ESP_OK;
+}
+
+bool NowManager::sendPingMsg(const uint8_t* mac) {
+  if (!_isDataTransferEnabled) return false;
+
+  NowManager::PingMsg msg;
+
+  return esp_now_send(mac, (uint8_t*)&msg, sizeof(msg)) == ESP_OK;
+}
+
 bool NowManager::validateMessage(MessageType expectedType, const uint8_t* data,
                                  size_t length) {
   // Evitar mensajes vacíos
@@ -117,6 +152,9 @@ size_t NowManager::_getMessageSize(MessageType type) {
 
     case MessageType::TEMPERATURE_HUMIDITY:
       return sizeof(TemperatureHumidityMsg);
+
+    case MessageType::ACTUATOR_STATE:
+      return sizeof(ActuatorStateMsg);
 
     default:
       return 0;  // Tipo desconocido
@@ -152,7 +190,7 @@ bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
   }
 
   switch (static_cast<NodeType>(newDevice.nodeType)) {
-    case NodeType::TEMPERATURE:
+    case NodeType::TEMPERATURE_HUMIDITY: {
       SensorData data;
       memcpy(data.mac, mac, 6);
       data.deviceName = newDevice.deviceName;
@@ -167,6 +205,16 @@ bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
       data.value.f = NAN;
       _sensors.push_back(data);
       break;
+    }
+
+    case NodeType::RELAY: {
+      ActuatorData data;
+      memcpy(data.mac, mac, 6);
+      data.deviceName = newDevice.deviceName;
+      data.state = false;
+      _actuators.push_back(data);
+      break;
+    }
   }
 
   return true;
@@ -186,10 +234,21 @@ void NowManager::printAllDevices() {
   i = 0;
   Serial.println("Sensores vinculados: ");
   for (const auto& sensor : _sensors) {
-    Serial.printf("%d - MAC: %s, Nombre: %s, Valor: %f\n", i,
+    Serial.printf("%d - MAC: %s, Nombre: %s, Valor: %f, Conectado: %s\n", i,
                   macToString(sensor.mac).c_str(), sensor.deviceName.c_str(),
-                  sensor.value);
+                  sensor.value,
+                  formatBooleanToText(sensor.isConnected).c_str());
     i++;
+  }
+
+  i = 0;
+  Serial.println("Actuadores vinculados: ");
+  for (const auto& actuator : _actuators) {
+    Serial.printf("%d - MAC: %s, Nombre: %s, Estado: %s, Conectado: %s\n", i,
+                  macToString(actuator.mac).c_str(),
+                  actuator.deviceName.c_str(),
+                  formatBooleanToText(actuator.state).c_str(),
+                  formatBooleanToText(actuator.isConnected).c_str());
   }
 }
 
@@ -198,9 +257,28 @@ NowManager::SensorData NowManager::getSensorAt(const int index) const {
     return _sensors.at(index);
   } else {
     SensorData data;
+    data.deviceName = "Nodo secundario";
     data.type = SensorValueType::BOOL;
     data.value.b = false;
+
+    return data;
   }
+}
+
+NowManager::ActuatorData NowManager::getActuatorAt(const int index) const {
+  if (index >= 0 && index < _actuators.size()) {
+    return _actuators.at(index);
+  } else {
+    ActuatorData data;
+    data.deviceName = "Nodo secundario";
+    data.state = false;
+
+    return data;
+  }
+}
+
+void NowManager::setDataTransfer(const bool state) {
+  _isDataTransferEnabled = state;
 }
 
 void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
@@ -210,7 +288,10 @@ void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
         return memcmp(d.mac, mac, 6) == 0 && d.variable == variable;
       });
 
-  if (it != _sensors.end()) it.base()->value.b = value;
+  if (it != _sensors.end()) {
+    it.base()->value.b = value;
+    it.base()->isConnected = true;
+  }
 }
 
 void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
@@ -220,7 +301,10 @@ void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
         return memcmp(d.mac, mac, 6) == 0 && d.variable == variable;
       });
 
-  if (it != _sensors.end()) it.base()->value.i = value;
+  if (it != _sensors.end()) {
+    it.base()->value.i = value;
+    it.base()->isConnected = true;
+  }
 }
 
 void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
@@ -230,7 +314,42 @@ void NowManager::updateSensorData(const uint8_t* mac, const String& variable,
         return memcmp(d.mac, mac, 6) == 0 && d.variable == variable;
       });
 
-  if (it != _sensors.end()) it.base()->value.f = value;
+  if (it != _sensors.end()) {
+    it.base()->value.f = value;
+    it.base()->isConnected = true;
+  }
+}
+
+void NowManager::updateActuatorState(const uint8_t* mac, const bool state) {
+  auto it = std::find_if(
+      _actuators.begin(), _actuators.end(),
+      [&mac](const ActuatorData& d) { return memcmp(d.mac, mac, 6) == 0; });
+
+  if (it != _actuators.end()) {
+    it.base()->state = state;
+    it.base()->isConnected = true;
+  }
+}
+
+void NowManager::desconnectSensor(const uint8_t* mac, const String& variable) {
+  auto it = std::find_if(
+      _sensors.begin(), _sensors.end(), [&mac, &variable](const SensorData& d) {
+        return memcmp(d.mac, mac, 6) == 0 && d.variable == variable;
+      });
+
+  if (it != _sensors.end()) {
+    it.base()->isConnected = false;
+  }
+}
+
+void NowManager::desconnectActuator(const uint8_t* mac) {
+  auto it = std::find_if(
+      _actuators.begin(), _actuators.end(),
+      [&mac](const ActuatorData& d) { return memcmp(d.mac, mac, 6) == 0; });
+
+  if (it != _actuators.end()) {
+    it.base()->isConnected = false;
+  }
 }
 
 bool NowManager::isDevicePaired(const uint8_t* mac) {
@@ -267,6 +386,33 @@ bool NowManager::removeDevice(const uint8_t* mac) {
 
     _pairedDevices.erase(it);
 
+    return true;
+  }
+
+  return false;
+}
+
+bool NowManager::removeSensor(const uint8_t* mac, const String& variable) {
+  auto it = std::find_if(
+      _sensors.begin(), _sensors.end(), [&mac, &variable](const SensorData& d) {
+        return memcmp(d.mac, mac, 6) == 0 && d.variable == variable;
+      });
+
+  if (it != _sensors.end()) {
+    _sensors.erase(it);
+    return true;
+  }
+
+  return false;
+}
+
+bool NowManager::removeActuator(const uint8_t* mac) {
+  auto it = std::find_if(
+      _actuators.begin(), _actuators.end(),
+      [&mac](const ActuatorData& d) { return memcmp(d.mac, mac, 6) == 0; });
+
+  if (it != _actuators.end()) {
+    _actuators.erase(it);
     return true;
   }
 

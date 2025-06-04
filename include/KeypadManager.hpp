@@ -6,8 +6,8 @@ enum class Key { UP, DOWN, BACK, ENTER, NONE };
 
 class KeypadManager {
  public:
-  KeypadManager(uint8_t upPin, uint8_t downPin, uint8_t backPin,
-                uint8_t enterPin);
+  KeypadManager(const gpio_num_t upPin, const gpio_num_t downPin,
+                const gpio_num_t backPin, const gpio_num_t enterPin);
   void begin();
   Key getKey();
 
@@ -19,8 +19,8 @@ class KeypadManager {
   Bounce _backDebouncer;
   Bounce _enterDebouncer;
 
-  const uint8_t _UP_PIN;
-  const uint8_t _DOWN_PIN;
-  const uint8_t _BACK_PIN;
-  const uint8_t _ENTER_PIN;
+  const gpio_num_t _UP_PIN;
+  const gpio_num_t _DOWN_PIN;
+  const gpio_num_t _BACK_PIN;
+  const gpio_num_t _ENTER_PIN;
 };

@@ -5,8 +5,9 @@
 #include "KeypadManager.hpp"
 #include "Utils.hpp"
 
-MenuManager::MenuManager(uint8_t lcdRS, uint8_t lcdEN, uint8_t lcdD4,
-                         uint8_t lcdD5, uint8_t lcdD6, uint8_t lcdD7,
+MenuManager::MenuManager(const gpio_num_t lcdRS, const gpio_num_t lcdEN,
+                         const gpio_num_t lcdD4, const gpio_num_t lcdD5,
+                         const gpio_num_t lcdD6, const gpio_num_t lcdD7,
                          WebServerManager& server, Data& data, NowManager& now)
     : _lcd(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7), _data(data), _now(now) {}
 
@@ -82,8 +83,10 @@ void MenuManager::handleKey(Key key) {
 
     case State::SENSOR:
       if (key == Key::UP || key == Key::DOWN) {
-        if (_now.getSensorListSize() > 0) {
-          _sensorScreen = (_sensorScreen + 1) % _now.getSensorListSize();
+        const size_t size = _now.getSensorListSize();
+
+        if (size > 0) {
+          _sensorScreen = (_sensorScreen + 1) % size;
         }
       } else if (key == Key::BACK) {
         _currentState = State::MAIN;
@@ -91,13 +94,152 @@ void MenuManager::handleKey(Key key) {
       }
       break;
 
-    case State::ACTION:
-      if (key == Key::UP || key == Key::DOWN) {
-        _actuatorScreen = (_actuatorScreen + 1) % 2;
+    case State::ACTUATOR:
+      if (key == Key::UP) {
+        if (_actuatorOption > 0)
+          _actuatorOption--;
+        else {
+          const size_t size = _now.getActuatorListSize();
+
+          if (size > 0) {
+            _actuatorScreen = (_actuatorScreen - 1) % size;
+            _actuatorOption = 1;
+          }
+        }
+      } else if (key == Key::DOWN) {
+        if (_actuatorOption < 1)
+          _actuatorOption++;
+        else {
+          const size_t size = _now.getActuatorListSize();
+
+          if (size > 0) {
+            _actuatorScreen = (_actuatorScreen + 1) % size;
+            _actuatorOption = 0;
+          }
+        }
+      } else if (key == Key::ENTER) {
+        if (_actuatorOption == 1) {
+          _currentState = State::SCHEDULE_ACTUATOR_CONNECTION;
+          _actuatorOption = 0;
+        } else if (_actuatorOption == 0) {
+          _currentState = State::ACTUATOR_SET_CONFIRM;
+        }
       } else if (key == Key::BACK) {
         _currentState = State::MAIN;
         _actuatorScreen = 0;
+        _actuatorOption = 0;
       }
+
+      break;
+
+    case State::ACTUATOR_SET_CONFIRM:
+      if (key == Key::UP) {
+        _confirmOption = (_confirmOption > 0) ? _confirmOption - 1 : 0;
+      } else if (key == Key::DOWN) {
+        _confirmOption = (_confirmOption < 1) ? _confirmOption + 1 : 1;
+      } else if (key == Key::ENTER) {
+        if (_confirmOption == 1) {
+          _currentState = State::ACTUATOR;
+
+          _trigger(Event::SET_ACTUATOR);
+        } else {
+          _currentState = State::ACTUATOR;
+        }
+        _confirmOption = 0;
+      } else if (key == Key::BACK) {
+        _currentState = State::ACTUATOR;
+        _confirmOption = 0;
+      }
+
+      break;
+
+    case State::SCHEDULE_ACTUATOR_CONNECTION:
+      if (key == Key::UP) {
+        if (_scheduleActuatorConnectionOption == 0 &&
+            _scheduleActuatorConnectionDisplayStart > 0)
+          _scheduleActuatorConnectionDisplayStart--;
+
+        if (_scheduleActuatorConnectionOption > 0)
+          _scheduleActuatorConnectionOption--;
+      } else if (key == Key::DOWN) {
+        if (_scheduleActuatorConnectionOption == 3 &&
+            _scheduleActuatorConnectionDisplayStart <
+                SCHEDULE_ACTUATOR_CONNECTION_TIMES_COUNT - 4)
+          _scheduleActuatorConnectionDisplayStart++;
+
+        if (_scheduleActuatorConnectionOption < 3)
+          _scheduleActuatorConnectionOption++;
+      } else if (key == Key::ENTER) {
+        _actuatorSchedule.offset =
+            _scheduleActuatorConnectionTimes
+                [_scheduleActuatorConnectionDisplayStart +
+                 _scheduleActuatorConnectionOption]
+                    .time;
+
+        _currentState = State::SCHEDULE_ACTUATOR_DESCONNECTION;
+        _scheduleActuatorConnectionOption = 0;
+        _scheduleActuatorConnectionDisplayStart = 0;
+      } else if (key == Key::BACK) {
+        _currentState = State::ACTUATOR;
+        _scheduleActuatorConnectionOption = 0;
+        _scheduleActuatorConnectionDisplayStart = 0;
+      }
+
+      break;
+
+    case State::SCHEDULE_ACTUATOR_DESCONNECTION:
+      if (key == Key::UP) {
+        if (_scheduleActuatorDesconnectionOption == 0 &&
+            _scheduleActuatorDesconnectionDisplayStart > 0)
+          _scheduleActuatorDesconnectionDisplayStart--;
+
+        if (_scheduleActuatorDesconnectionOption > 0)
+          _scheduleActuatorDesconnectionOption--;
+      } else if (key == Key::DOWN) {
+        if (_scheduleActuatorDesconnectionOption == 3 &&
+            _scheduleActuatorDesconnectionDisplayStart <
+                SCHEDULE_ACTUATOR_DESCONNECTION_TIMES_COUNT - 4)
+          _scheduleActuatorDesconnectionDisplayStart++;
+
+        if (_scheduleActuatorDesconnectionOption < 3)
+          _scheduleActuatorDesconnectionOption++;
+      } else if (key == Key::ENTER) {
+        _actuatorSchedule.duration =
+            _scheduleActuatorDesconnectionTimes
+                [_scheduleActuatorDesconnectionDisplayStart +
+                 _scheduleActuatorDesconnectionOption]
+                    .time;
+
+        _currentState = State::SCHEDULE_ACTUATOR_CONFIRM;
+        _scheduleActuatorDesconnectionOption = 0;
+        _scheduleActuatorDesconnectionDisplayStart = 0;
+      } else if (key == Key::BACK) {
+        _currentState = State::SCHEDULE_ACTUATOR_CONNECTION;
+        _scheduleActuatorDesconnectionOption = 0;
+        _scheduleActuatorDesconnectionDisplayStart = 0;
+      }
+
+      break;
+
+    case State::SCHEDULE_ACTUATOR_CONFIRM:
+      if (key == Key::UP) {
+        _confirmOption = (_confirmOption > 0) ? _confirmOption - 1 : 0;
+      } else if (key == Key::DOWN) {
+        _confirmOption = (_confirmOption < 1) ? _confirmOption + 1 : 1;
+      } else if (key == Key::ENTER) {
+        if (_confirmOption == 1) {
+          _currentState = State::ACTUATOR;
+
+          _trigger(Event::SCHEDULE_ACTUATOR);
+        } else {
+          _currentState = State::ACTUATOR;
+        }
+        _confirmOption = 0;
+      } else if (key == Key::BACK) {
+        _currentState = State::SCHEDULE_ACTUATOR_DESCONNECTION;
+        _confirmOption = 0;
+      }
+
       break;
   }
 };
@@ -114,8 +256,21 @@ void MenuManager::updateDisplay() {
     case State::SENSOR:
       _showSensor();
       break;
-    case State::ACTION:
-      _showAction();
+    case State::ACTUATOR:
+      _showActuator();
+      break;
+    case State::ACTUATOR_SET_CONFIRM:
+      _showConfirm(_now.getActuatorAt(_actuatorScreen).state ? "Apagar?"
+                                                             : "Encender?");
+      break;
+    case State::SCHEDULE_ACTUATOR_CONNECTION:
+      _showScheduleActuatorConnection();
+      break;
+    case State::SCHEDULE_ACTUATOR_DESCONNECTION:
+      _showScheduleActuatorDesconnection();
+      break;
+    case State::SCHEDULE_ACTUATOR_CONFIRM:
+      _showConfirm("Programar?");
       break;
     case State::CONFIG:
       _showConfig();
@@ -173,6 +328,9 @@ void MenuManager::updateData() {
       _lcd.clear();
       _showSensor();
       break;
+    case State::ACTUATOR:
+      _lcd.clear();
+      _showActuator();
 
     default:
       break;
@@ -224,33 +382,40 @@ void MenuManager::_showSensor() {
   const size_t sensorListSize = _now.getSensorListSize();
 
   if (sensorListSize > 0) {
-    if (_sensorScreen >= 0 && _sensorScreen < _now.getSensorListSize()) {
+    if (_sensorScreen >= 0 && _sensorScreen < sensorListSize) {
       NowManager::SensorData data = _now.getSensorAt(_sensorScreen);
       bool isValid;
 
       _lcd.setCursor(0, 0);
-      _lcd.print(data.deviceName);
+      _lcd.print(data.deviceName.c_str());
       _lcd.setCursor(0, 1);
 
       switch (data.type) {
         case NowManager::SensorValueType::BOOL:
           _lcd.printf("%s: %s", data.variable.c_str(),
-                      formatBooleanToText(data.value.b).c_str());
+                      data.isConnected
+                          ? formatBooleanToText(data.value.b).c_str()
+                          : "Desconectado");
           break;
 
         case NowManager::SensorValueType::INT:
           isValid = !isnan(data.value.i);
-          _lcd.printf("%s: %s%s", data.variable.c_str(),
-                      isValid ? String(data.value.i).c_str() : "",
-                      isValid ? data.units.c_str() : "");
+          _lcd.printf(
+              "%s: %s%s", data.variable.c_str(),
+              data.isConnected ? (isValid ? String(data.value.i).c_str() : "")
+                               : "Desconectado",
+              data.isConnected ? (isValid ? data.units.c_str() : "") : "");
           break;
 
         case NowManager::SensorValueType::FLOAT:
           isValid = !isnan(data.value.f);
           _lcd.printf(
               "%s: %s%s", data.variable.c_str(),
-              isValid ? String(round(data.value.f * 10) / 10).c_str() : "",
-              isValid ? data.units.c_str() : "");
+              data.isConnected
+                  ? (isValid ? String(round(data.value.f * 10) / 10).c_str()
+                             : "")
+                  : "Desconectado",
+              data.isConnected ? (isValid ? data.units.c_str() : "") : "");
           break;
       }
     }
@@ -262,16 +427,110 @@ void MenuManager::_showSensor() {
   }
 }
 
-void MenuManager::_showAction() {
-  if (_actuatorScreen == 0) {
-    _lcd.print("Motor");
-    _lcd.setCursor(0, 1);
-    _lcd.print("RUN");
+void MenuManager::_showActuator() {
+  const size_t actuatorListSize = _now.getActuatorListSize();
+
+  if (actuatorListSize > 0) {
+    if (_actuatorScreen >= 0 && _actuatorScreen < actuatorListSize) {
+      NowManager::ActuatorData data = _now.getActuatorAt(_actuatorScreen);
+
+      _lcd.setCursor(0, 0);
+      _lcd.print(data.deviceName.c_str());
+
+      if (data.isConnected) {
+        _lcd.setCursor(1, 1);
+        _lcd.printf("%s", data.state ? "ON" : "OFF");
+        _lcd.setCursor(7, 1);
+        _lcd.print("Programar");
+
+        // Cursor dinámico
+        _lcd.setCursor(0, 1);
+        _lcd.print(_actuatorOption == 0 ? ">" : " ");
+
+        _lcd.setCursor(6, 1);
+        _lcd.print(_actuatorOption == 1 ? ">" : " ");
+      } else {
+        _lcd.setCursor(0, 1);
+        _lcd.print("Desconectado");
+      }
+    }
   } else {
-    _lcd.print("Luces");
+    _lcd.setCursor(0, 0);
+    _lcd.print("Sin actuadores");
     _lcd.setCursor(0, 1);
-    _lcd.print("RUN");
+    _lcd.print("vinculados");
   }
+}
+
+void MenuManager::_showScheduleActuatorConnection() {
+  _lcd.setCursor(1, 0);
+  _lcd.printf(
+      "%s",
+      _scheduleActuatorConnectionTimes[_scheduleActuatorConnectionDisplayStart]
+          .text);
+  _lcd.setCursor(8, 0);
+  _lcd.printf(
+      "%s",
+      _scheduleActuatorConnectionTimes[_scheduleActuatorConnectionDisplayStart +
+                                       1]
+          .text);
+  _lcd.setCursor(1, 1);
+  _lcd.printf(
+      "%s",
+      _scheduleActuatorConnectionTimes[_scheduleActuatorConnectionDisplayStart +
+                                       2]
+          .text);
+  _lcd.setCursor(8, 1);
+  _lcd.printf(
+      "%s",
+      _scheduleActuatorConnectionTimes[_scheduleActuatorConnectionDisplayStart +
+                                       3]
+          .text);
+
+  // Cursor dinámico
+  _lcd.setCursor(0, 0);
+  _lcd.print(_scheduleActuatorConnectionOption == 0 ? ">" : " ");
+
+  _lcd.setCursor(7, 0);
+  _lcd.print(_scheduleActuatorConnectionOption == 1 ? ">" : " ");
+
+  _lcd.setCursor(0, 1);
+  _lcd.print(_scheduleActuatorConnectionOption == 2 ? ">" : " ");
+
+  _lcd.setCursor(7, 1);
+  _lcd.print(_scheduleActuatorConnectionOption == 3 ? ">" : " ");
+}
+
+void MenuManager::_showScheduleActuatorDesconnection() {
+  _lcd.setCursor(1, 0);
+  _lcd.printf("%s", _scheduleActuatorDesconnectionTimes
+                        [_scheduleActuatorDesconnectionDisplayStart]
+                            .text);
+  _lcd.setCursor(8, 0);
+  _lcd.printf("%s", _scheduleActuatorDesconnectionTimes
+                        [_scheduleActuatorDesconnectionDisplayStart + 1]
+                            .text);
+  _lcd.setCursor(1, 1);
+  _lcd.printf("%s", _scheduleActuatorDesconnectionTimes
+                        [_scheduleActuatorDesconnectionDisplayStart + 2]
+                            .text);
+  _lcd.setCursor(8, 1);
+  _lcd.printf("%s", _scheduleActuatorDesconnectionTimes
+                        [_scheduleActuatorDesconnectionDisplayStart + 3]
+                            .text);
+
+  // Cursor dinámico
+  _lcd.setCursor(0, 0);
+  _lcd.print(_scheduleActuatorDesconnectionOption == 0 ? ">" : " ");
+
+  _lcd.setCursor(7, 0);
+  _lcd.print(_scheduleActuatorDesconnectionOption == 1 ? ">" : " ");
+
+  _lcd.setCursor(0, 1);
+  _lcd.print(_scheduleActuatorDesconnectionOption == 2 ? ">" : " ");
+
+  _lcd.setCursor(7, 1);
+  _lcd.print(_scheduleActuatorDesconnectionOption == 3 ? ">" : " ");
 }
 
 void MenuManager::_showConfirm(const String& message) {

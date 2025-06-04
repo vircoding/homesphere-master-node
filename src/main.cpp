@@ -13,20 +13,20 @@
 #include "WiFiManager.hpp"
 
 // Pinout
-const uint8_t rgbRed = 4;
-const uint8_t rgbGreen = 16;
-const uint8_t rgbBlue = 17;
-const uint8_t keypadUp = 23;
-const uint8_t keypadDown = 22;
-const uint8_t keypadBack = 21;
-const uint8_t keypadEnter = 19;
-const uint8_t syncButtonPin = 18;
-const uint8_t lcdRS = 13;
-const uint8_t lcdEN = 14;
-const uint8_t lcdD4 = 27;
-const uint8_t lcdD5 = 26;
-const uint8_t lcdD6 = 25;
-const uint8_t lcdD7 = 33;
+const gpio_num_t rgbRed = GPIO_NUM_4;
+const gpio_num_t rgbGreen = GPIO_NUM_16;
+const gpio_num_t rgbBlue = GPIO_NUM_17;
+const gpio_num_t keypadUp = GPIO_NUM_23;
+const gpio_num_t keypadDown = GPIO_NUM_22;
+const gpio_num_t keypadBack = GPIO_NUM_21;
+const gpio_num_t keypadEnter = GPIO_NUM_19;
+const gpio_num_t syncButtonPin = GPIO_NUM_18;
+const gpio_num_t lcdRS = GPIO_NUM_13;
+const gpio_num_t lcdEN = GPIO_NUM_14;
+const gpio_num_t lcdD4 = GPIO_NUM_27;
+const gpio_num_t lcdD5 = GPIO_NUM_26;
+const gpio_num_t lcdD6 = GPIO_NUM_25;
+const gpio_num_t lcdD7 = GPIO_NUM_33;
 
 // Task Handlers
 TaskHandle_t blinkRGBTaskHandler = NULL;
@@ -36,6 +36,7 @@ TaskHandle_t sendSyncBroadcastTaskHandler = NULL;
 TimerHandle_t syncModeTimeoutTimerHandler = NULL;
 
 // Global Variables
+bool syncModeState = false;
 MenuManager::Data globalData;
 uint32_t wdtTimeout = 5;
 
@@ -54,19 +55,22 @@ void setWatchdogTimeout(uint32_t newTimeout);
 void tryConnectSTA(const bool updateDisplay = false);
 void onConfigEnterCallback();
 void onConfigExitCallback();
-void onReceivedCallback(const uint8_t* mac_addr, const uint8_t* data,
-                        int length);
+void onSetActuatorCallback();
+void onScheduleActuatorCallback();
+void onReceivedCallback(const uint8_t* mac, const uint8_t* data, int length);
+void onSendCallback(const uint8_t* mac, esp_now_send_status_t status);
 void handleMenuTask(void* parameter);
 void blinkRGBTask(void* parameter);
 void sendSyncBroadcastTask(void* parameter);
 void enterSyncMode();
 void endSyncMode();
-void onLongButtonPressCallback() { enterSyncMode(); };
-void onSimpleButtonPressCallback() { endSyncMode(); };
+void onLongButtonPressCallback() { enterSyncMode(); }
+void onSimpleButtonPressCallback() { endSyncMode(); }
 void onRegistrationReceivedCallback(const uint8_t* mac, const uint8_t* data,
                                     int length);
 void syncModeTimeoutCallback(TimerHandle_t xTimer) { endSyncMode(); };
 void registerAllNodes(const uint8_t size);
+void pingAllDevices();
 
 void setup() {
   Serial.begin(115200);
@@ -79,6 +83,8 @@ void setup() {
 
   menu.on(MenuManager::Event::CONFIG_ENTER, onConfigEnterCallback);
   menu.on(MenuManager::Event::CONFIG_EXIT, onConfigExitCallback);
+  menu.on(MenuManager::Event::SET_ACTUATOR, onSetActuatorCallback);
+  menu.on(MenuManager::Event::SCHEDULE_ACTUATOR, onScheduleActuatorCallback);
 
   menu.begin();
   menu.showCustomInfoScreen("HomeSphere", "Bienvenid@");
@@ -93,8 +99,11 @@ void setup() {
                 onLongButtonPressCallback);
 
   now.init();
-  registerAllNodes(config.getNodeLength());
   now.onReceived(onReceivedCallback);
+  now.onSend(onSendCallback);
+  now.setDataTransfer(true);
+  registerAllNodes(config.getNodeLength());
+  pingAllDevices();
 
   menu.clearCustomInfoScreen();
 
@@ -139,8 +148,41 @@ void onConfigEnterCallback() {
 
 void onConfigExitCallback() { server.end(); }
 
+void onSetActuatorCallback() {
+  const int index = menu.getCurrentActuatorIndex();
+  const NowManager::ActuatorData actuator = now.getActuatorAt(index);
+
+  Serial.printf("%s actuador: %s\n", actuator.state ? "Apagar" : "Encender",
+                macToString(actuator.mac).c_str());
+
+  if (now.sendSetActuatorMsg(actuator.mac, !actuator.state)) {
+    Serial.println("Mensaje SetActuator enviado");
+  } else {
+    Serial.println(" Error enviando mensaje SetActuator");
+  }
+}
+
+void onScheduleActuatorCallback() {
+  const int index = menu.getCurrentActuatorIndex();
+  const NowManager::ActuatorData actuator = now.getActuatorAt(index);
+  const MenuManager::ActuatorSchedule schedule = menu.getActuatorSchedule();
+
+  Serial.printf("Programar actuador: %s\nOffset: %d - Duration: %d\n",
+                macToString(actuator.mac).c_str(), schedule.offset,
+                schedule.duration);
+
+  if (now.sendScheduleActuatorMsg(actuator.mac, schedule.offset,
+                                  schedule.duration)) {
+    Serial.println("Mensaje ScheduleActuator enviado");
+  } else {
+    Serial.println(" Error enviando mensaje ScheduleActuator");
+  }
+}
+
 void onReceivedCallback(const uint8_t* mac, const uint8_t* data, int length) {
-  // TODO: Validar que la direccion mac este en la lista de paired devices
+  if (!now.getIsDataTransferEnabled()) return;
+
+  // Validar que la direccion mac este en la lista de paired devices
   if (!now.isDevicePaired(mac)) return;
 
   if (NowManager::validateMessage(NowManager::MessageType::TEMPERATURE_HUMIDITY,
@@ -151,10 +193,42 @@ void onReceivedCallback(const uint8_t* mac, const uint8_t* data, int length) {
     if (verifyCRC8(*msg)) {
       now.updateSensorData(mac, "Temp", msg->temp);
       now.updateSensorData(mac, "Hum", msg->hum);
-
       now.updateDeviceLastSeen(mac);
       menu.updateData();
     }
+  } else if (NowManager::validateMessage(
+                 NowManager::MessageType::ACTUATOR_STATE, data, length)) {
+    const NowManager::ActuatorStateMsg* msg =
+        reinterpret_cast<const NowManager::ActuatorStateMsg*>(data);
+
+    if (verifyCRC8(*msg)) {
+      Serial.printf("Mensaje recibido: %s", msg->state ? "true" : "false");
+      now.updateActuatorState(mac, msg->state);
+      now.updateDeviceLastSeen(mac);
+      menu.updateData();
+    }
+  }
+}
+
+void onSendCallback(const uint8_t* mac, esp_now_send_status_t status) {
+  if (status != ESP_NOW_SEND_SUCCESS) {
+    NowManager::DeviceInfo* device = now.findDevice(mac);
+
+    switch (static_cast<NowManager::NodeType>(device->nodeType)) {
+      case NowManager::NodeType::TEMPERATURE_HUMIDITY:
+        Serial.println("Desconectando temperatura");
+        now.desconnectSensor(device->mac, "Temp");
+        Serial.println("Desconectando humedad");
+        now.desconnectSensor(device->mac, "Hum");
+        break;
+
+      case NowManager::NodeType::RELAY:
+        Serial.println("Desconectando relay");
+        now.desconnectActuator(device->mac);
+        break;
+    }
+
+    now.printAllDevices();
   }
 }
 
@@ -210,8 +284,10 @@ void sendSyncBroadcastTask(void* parameter) {
 }
 
 void enterSyncMode() {
-  if (blinkRGBTaskHandler == NULL && sendSyncBroadcastTaskHandler == NULL) {
+  if (!syncModeState) {
     menu.showCustomInfoScreen("Vinculando", "nodo secundario");
+
+    now.setDataTransfer(false);
 
     if (!now.reset()) ESP.restart();
 
@@ -219,10 +295,15 @@ void enterSyncMode() {
 
     now.onReceived(onRegistrationReceivedCallback);
 
-    xTaskCreatePinnedToCore(blinkRGBTask, "Blink LED", 2048, NULL, 2,
-                            &blinkRGBTaskHandler, 1);
-    xTaskCreatePinnedToCore(sendSyncBroadcastTask, "Send Sync Broadcast", 4096,
-                            NULL, 1, &sendSyncBroadcastTaskHandler, 1);
+    if (blinkRGBTaskHandler == NULL) {
+      xTaskCreatePinnedToCore(blinkRGBTask, "Blink LED", 2048, NULL, 2,
+                              &blinkRGBTaskHandler, 1);
+    }
+
+    if (sendSyncBroadcastTaskHandler == NULL) {
+      xTaskCreatePinnedToCore(sendSyncBroadcastTask, "Send Sync Broadcast",
+                              4096, NULL, 1, &sendSyncBroadcastTaskHandler, 1);
+    }
 
     syncModeTimeoutTimerHandler = xTimerCreate(
         "Sync Mode Timeout", pdMS_TO_TICKS(NowManager::SYNC_MODE_TIMEOUT),
@@ -231,6 +312,8 @@ void enterSyncMode() {
 
     if (syncModeTimeoutTimerHandler != NULL)
       xTimerStart(syncModeTimeoutTimerHandler, 0);
+
+    syncModeState = true;
   }
 }
 
@@ -257,34 +340,50 @@ void registerAllNodes(const uint8_t size) {
     now.addDevice(node.mac, node.nodeType, node.deviceName,
                   node.firmwareVersion);
   }
+}
 
-  now.printAllDevices();
+void pingAllDevices() {
+  for (NowManager::DeviceInfo device : now.getDeviceList()) {
+    if (now.sendPingMsg(device.mac)) {
+      Serial.println("Mensaje Ping enviado");
+    } else {
+      Serial.println("Error enviando mensaje Ping");
+    }
+  }
 }
 
 void endSyncMode() {
-  // Detener el timer
-  xTimerStop(syncModeTimeoutTimerHandler, 0);
+  if (syncModeState) {
+    // Detener el timer
+    xTimerStop(syncModeTimeoutTimerHandler, 0);
 
-  // Eliminar el timer y liberar memoria
-  if (xTimerDelete(syncModeTimeoutTimerHandler, 0) == pdPASS)
-    syncModeTimeoutTimerHandler =
-        NULL;  // Reasignar a NULL para evitar usos indebidos
+    // Eliminar el timer y liberar memoria
+    if (xTimerDelete(syncModeTimeoutTimerHandler, 0) == pdPASS)
+      syncModeTimeoutTimerHandler =
+          NULL;  // Reasignar a NULL para evitar usos indebidos
 
-  if (sendSyncBroadcastTaskHandler != NULL) {
-    vTaskDelete(sendSyncBroadcastTaskHandler);
-    sendSyncBroadcastTaskHandler = NULL;
+    if (sendSyncBroadcastTaskHandler != NULL) {
+      vTaskDelete(sendSyncBroadcastTaskHandler);
+      sendSyncBroadcastTaskHandler = NULL;
+    }
+
+    if (blinkRGBTaskHandler != NULL) {
+      vTaskDelete(blinkRGBTaskHandler);
+      blinkRGBTaskHandler = NULL;
+      rgb.set(Status::OFF);
+    }
+
+    // Reiniciar ESP-NOW
+    if (!now.reset()) ESP.restart();
+
+    now.onReceived(onReceivedCallback);
+    now.onSend(onSendCallback);
+    now.setDataTransfer(true);
+    registerAllNodes(config.getNodeLength());
+    pingAllDevices();
+
+    menu.clearCustomInfoScreen();
+
+    syncModeState = false;
   }
-
-  if (blinkRGBTaskHandler != NULL) {
-    vTaskDelete(blinkRGBTaskHandler);
-    blinkRGBTaskHandler = NULL;
-    rgb.set(Status::OFF);
-  }
-
-  // Reiniciar ESP-NOW
-  if (!now.reset()) ESP.restart();
-
-  registerAllNodes(config.getNodeLength());
-  now.onReceived(onReceivedCallback);
-  menu.clearCustomInfoScreen();
 }
