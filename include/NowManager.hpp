@@ -12,15 +12,17 @@ class NowManager {
   static constexpr uint32_t SEND_SYNC_BROADCAST_MSG_INTERVAL = 5000;  // 5s
 
   enum class NodeType {
-    TEMPERATURE = 0x1A,
-    HUMIDITY = 0x02,
+    TEMPERATURE_HUMIDITY = 0x1A,
+    RELAY = 0x2B,
   };
 
   enum class MessageType {
     SYNC_BROADCAST = 0x55,
     REGISTRATION = 0xAA,
     CONFIRM_REGISTRATION = 0xCC,
-    TEMPERATURE_HUMIDITY = 0x1A
+    TEMPERATURE_HUMIDITY = 0x1A,
+    SET_ACTION = 0x26,
+    SCHEDULE_ACTION = 0x33
   };
 
   enum class SensorValueType { FLOAT, INT, BOOL };
@@ -51,6 +53,19 @@ class NowManager {
     float hum;
     uint8_t crc;
   };
+
+  struct SetActionMsg {
+    uint8_t msgType = static_cast<uint8_t>(MessageType::SET_ACTION);
+    bool state;
+    uint8_t crc;
+  };
+
+  struct ScheduleActionMsg {
+    uint8_t msgType = static_cast<uint8_t>(MessageType::SCHEDULE_ACTION);
+    uint32_t offset;
+    uint32_t duration;
+    uint8_t crc;
+  };
 #pragma pack(pop)
 
   struct DeviceInfo {
@@ -75,6 +90,12 @@ class NowManager {
     } value;
   };
 
+  struct ActuatorData {
+    uint8_t mac[6];
+    String deviceName;
+    bool state;
+  };
+
   bool init();
   bool stop();
   bool reset();
@@ -85,6 +106,9 @@ class NowManager {
   void unsuscribeOnReceived();
   bool sendSyncBroadcastMsg();
   bool sendConfirmRegistrationMsg(const uint8_t* mac);
+  bool sendSetActionMsg(const uint8_t* mac, const bool state);
+  bool sendScheduleActionMsg(const uint8_t* mac, const uint32_t offset = 0,
+                             const uint32_t duration = 0xFFFFFFFF);
   static bool validateMessage(MessageType expectedType, const uint8_t* data,
                               size_t length);
   DeviceInfo* findDevice(const uint8_t* mac);
@@ -94,9 +118,12 @@ class NowManager {
   bool isDevicePaired(const uint8_t* mac);
   void updateDeviceLastSeen(const uint8_t* mac);
   void printAllDevices();
-  std::vector<SensorData> getSensorList() const { return _sensors; };
+  std::vector<SensorData> getSensorList() const { return _sensors; }
+  std::vector<ActuatorData> getActuatorList() const { return _actuators; }
   size_t getSensorListSize() const { return _sensors.size(); }
+  size_t getActuatorListSize() const { return _actuators.size(); }
   SensorData getSensorAt(const int index) const;
+  ActuatorData getActuatorAt(const int index) const;
   void updateSensorData(
       const uint8_t* mac, const String& variable,
       const bool value);  // Metodo sobrecargado para sensores binarios
@@ -112,6 +139,7 @@ class NowManager {
   bool _isBroadcastPeerRegistered = false;
   std::vector<DeviceInfo> _pairedDevices;
   std::vector<SensorData> _sensors;
+  std::vector<ActuatorData> _actuators;
 
   static size_t _getMessageSize(MessageType type);
   bool _registerPeer(const uint8_t* mac);

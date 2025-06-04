@@ -1,7 +1,8 @@
 #include <KeypadManager.hpp>
 
-KeypadManager::KeypadManager(uint8_t upPin, uint8_t downPin, uint8_t backPin,
-                             uint8_t enterPin)
+KeypadManager::KeypadManager(const gpio_num_t upPin, const gpio_num_t downPin,
+                             const gpio_num_t backPin,
+                             const gpio_num_t enterPin)
     : _UP_PIN(upPin),
       _DOWN_PIN(downPin),
       _BACK_PIN(backPin),

@@ -5,8 +5,9 @@
 #include "KeypadManager.hpp"
 #include "Utils.hpp"
 
-MenuManager::MenuManager(uint8_t lcdRS, uint8_t lcdEN, uint8_t lcdD4,
-                         uint8_t lcdD5, uint8_t lcdD6, uint8_t lcdD7,
+MenuManager::MenuManager(const gpio_num_t lcdRS, const gpio_num_t lcdEN,
+                         const gpio_num_t lcdD4, const gpio_num_t lcdD5,
+                         const gpio_num_t lcdD6, const gpio_num_t lcdD7,
                          WebServerManager& server, Data& data, NowManager& now)
     : _lcd(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7), _data(data), _now(now) {}
 

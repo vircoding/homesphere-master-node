@@ -95,6 +95,29 @@ bool NowManager::sendConfirmRegistrationMsg(const uint8_t* mac) {
   return esp_now_send(mac, (uint8_t*)&msg, sizeof(msg)) == ESP_OK;
 }
 
+bool NowManager::sendSetActionMsg(const uint8_t* mac, const bool state) {
+  NowManager::SetActionMsg msg;
+  msg.state = state;
+
+  // Generate CRC8
+  addCRC8(msg);
+
+  return esp_now_send(mac, (uint8_t*)&msg, sizeof(msg)) == ESP_OK;
+}
+
+bool NowManager::sendScheduleActionMsg(const uint8_t* mac,
+                                       const uint32_t offset,
+                                       const uint32_t duration) {
+  NowManager::ScheduleActionMsg msg;
+  msg.offset = offset;
+  msg.duration = duration;
+
+  // Generate CRC8
+  addCRC8(msg);
+
+  return esp_now_send(mac, (uint8_t*)&msg, sizeof(msg)) == ESP_OK;
+}
+
 bool NowManager::validateMessage(MessageType expectedType, const uint8_t* data,
                                  size_t length) {
   // Evitar mensajes vacíos
@@ -152,7 +175,7 @@ bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
   }
 
   switch (static_cast<NodeType>(newDevice.nodeType)) {
-    case NodeType::TEMPERATURE:
+    case NodeType::TEMPERATURE_HUMIDITY: {
       SensorData data;
       memcpy(data.mac, mac, 6);
       data.deviceName = newDevice.deviceName;
@@ -167,6 +190,15 @@ bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
       data.value.f = NAN;
       _sensors.push_back(data);
       break;
+    }
+
+    case NodeType::RELAY: {
+      ActuatorData data;
+      memcpy(data.mac, mac, 6);
+      data.deviceName = newDevice.deviceName;
+      data.state = false;
+      _actuators.push_back(data);
+    } break;
   }
 
   return true;
@@ -191,6 +223,15 @@ void NowManager::printAllDevices() {
                   sensor.value);
     i++;
   }
+
+  i = 0;
+  Serial.println("Actuadores vinculados: ");
+  for (const auto& actuator : _actuators) {
+    Serial.printf("%d - MAC: %s, Nombre: %s, Estado: %s\n", i,
+                  macToString(actuator.mac).c_str(),
+                  actuator.deviceName.c_str(),
+                  formatBooleanToText(actuator.state).c_str());
+  }
 }
 
 NowManager::SensorData NowManager::getSensorAt(const int index) const {
@@ -200,6 +241,19 @@ NowManager::SensorData NowManager::getSensorAt(const int index) const {
     SensorData data;
     data.type = SensorValueType::BOOL;
     data.value.b = false;
+
+    return data;
+  }
+}
+
+NowManager::ActuatorData NowManager::getActuatorAt(const int index) const {
+  if (index >= 0 && index < _sensors.size()) {
+    return _actuators.at(index);
+  } else {
+    ActuatorData data;
+    data.state = false;
+
+    return data;
   }
 }
 

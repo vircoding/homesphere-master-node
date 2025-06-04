@@ -13,20 +13,20 @@
 #include "WiFiManager.hpp"
 
 // Pinout
-const uint8_t rgbRed = 4;
-const uint8_t rgbGreen = 16;
-const uint8_t rgbBlue = 17;
-const uint8_t keypadUp = 23;
-const uint8_t keypadDown = 22;
-const uint8_t keypadBack = 21;
-const uint8_t keypadEnter = 19;
-const uint8_t syncButtonPin = 18;
-const uint8_t lcdRS = 13;
-const uint8_t lcdEN = 14;
-const uint8_t lcdD4 = 27;
-const uint8_t lcdD5 = 26;
-const uint8_t lcdD6 = 25;
-const uint8_t lcdD7 = 33;
+const gpio_num_t rgbRed = GPIO_NUM_4;
+const gpio_num_t rgbGreen = GPIO_NUM_16;
+const gpio_num_t rgbBlue = GPIO_NUM_17;
+const gpio_num_t keypadUp = GPIO_NUM_23;
+const gpio_num_t keypadDown = GPIO_NUM_22;
+const gpio_num_t keypadBack = GPIO_NUM_21;
+const gpio_num_t keypadEnter = GPIO_NUM_19;
+const gpio_num_t syncButtonPin = GPIO_NUM_18;
+const gpio_num_t lcdRS = GPIO_NUM_13;
+const gpio_num_t lcdEN = GPIO_NUM_14;
+const gpio_num_t lcdD4 = GPIO_NUM_27;
+const gpio_num_t lcdD5 = GPIO_NUM_26;
+const gpio_num_t lcdD6 = GPIO_NUM_25;
+const gpio_num_t lcdD7 = GPIO_NUM_33;
 
 // Task Handlers
 TaskHandle_t blinkRGBTaskHandler = NULL;
@@ -36,6 +36,7 @@ TaskHandle_t sendSyncBroadcastTaskHandler = NULL;
 TimerHandle_t syncModeTimeoutTimerHandler = NULL;
 
 // Global Variables
+bool syncModeState = false;
 MenuManager::Data globalData;
 uint32_t wdtTimeout = 5;
 
@@ -54,15 +55,23 @@ void setWatchdogTimeout(uint32_t newTimeout);
 void tryConnectSTA(const bool updateDisplay = false);
 void onConfigEnterCallback();
 void onConfigExitCallback();
-void onReceivedCallback(const uint8_t* mac_addr, const uint8_t* data,
-                        int length);
+void onReceivedCallback(const uint8_t* mac, const uint8_t* data, int length);
 void handleMenuTask(void* parameter);
 void blinkRGBTask(void* parameter);
 void sendSyncBroadcastTask(void* parameter);
 void enterSyncMode();
 void endSyncMode();
 void onLongButtonPressCallback() { enterSyncMode(); };
-void onSimpleButtonPressCallback() { endSyncMode(); };
+void onSimpleButtonPressCallback() {
+  const uint8_t mac[6] = {0x08, 0xA6, 0xF7, 0xBC, 0x8C, 0xA8};
+
+  if (now.sendScheduleActionMsg(mac, 8000, 15000))
+    Serial.println("Mensaje ScheduleAction enviado");
+  else
+    Serial.println("Error enviando mensaje ScheduleAction");
+
+  endSyncMode();
+};
 void onRegistrationReceivedCallback(const uint8_t* mac, const uint8_t* data,
                                     int length);
 void syncModeTimeoutCallback(TimerHandle_t xTimer) { endSyncMode(); };
@@ -140,7 +149,7 @@ void onConfigEnterCallback() {
 void onConfigExitCallback() { server.end(); }
 
 void onReceivedCallback(const uint8_t* mac, const uint8_t* data, int length) {
-  // TODO: Validar que la direccion mac este en la lista de paired devices
+  // Validar que la direccion mac este en la lista de paired devices
   if (!now.isDevicePaired(mac)) return;
 
   if (NowManager::validateMessage(NowManager::MessageType::TEMPERATURE_HUMIDITY,
@@ -210,7 +219,7 @@ void sendSyncBroadcastTask(void* parameter) {
 }
 
 void enterSyncMode() {
-  if (blinkRGBTaskHandler == NULL && sendSyncBroadcastTaskHandler == NULL) {
+  if (!syncModeState) {
     menu.showCustomInfoScreen("Vinculando", "nodo secundario");
 
     if (!now.reset()) ESP.restart();
@@ -219,10 +228,15 @@ void enterSyncMode() {
 
     now.onReceived(onRegistrationReceivedCallback);
 
-    xTaskCreatePinnedToCore(blinkRGBTask, "Blink LED", 2048, NULL, 2,
-                            &blinkRGBTaskHandler, 1);
-    xTaskCreatePinnedToCore(sendSyncBroadcastTask, "Send Sync Broadcast", 4096,
-                            NULL, 1, &sendSyncBroadcastTaskHandler, 1);
+    if (blinkRGBTaskHandler == NULL) {
+      xTaskCreatePinnedToCore(blinkRGBTask, "Blink LED", 2048, NULL, 2,
+                              &blinkRGBTaskHandler, 1);
+    }
+
+    if (sendSyncBroadcastTaskHandler == NULL) {
+      xTaskCreatePinnedToCore(sendSyncBroadcastTask, "Send Sync Broadcast",
+                              4096, NULL, 1, &sendSyncBroadcastTaskHandler, 1);
+    }
 
     syncModeTimeoutTimerHandler = xTimerCreate(
         "Sync Mode Timeout", pdMS_TO_TICKS(NowManager::SYNC_MODE_TIMEOUT),
@@ -231,6 +245,8 @@ void enterSyncMode() {
 
     if (syncModeTimeoutTimerHandler != NULL)
       xTimerStart(syncModeTimeoutTimerHandler, 0);
+
+    syncModeState = true;
   }
 }
 
@@ -262,29 +278,33 @@ void registerAllNodes(const uint8_t size) {
 }
 
 void endSyncMode() {
-  // Detener el timer
-  xTimerStop(syncModeTimeoutTimerHandler, 0);
+  if (syncModeState) {
+    // Detener el timer
+    xTimerStop(syncModeTimeoutTimerHandler, 0);
 
-  // Eliminar el timer y liberar memoria
-  if (xTimerDelete(syncModeTimeoutTimerHandler, 0) == pdPASS)
-    syncModeTimeoutTimerHandler =
-        NULL;  // Reasignar a NULL para evitar usos indebidos
+    // Eliminar el timer y liberar memoria
+    if (xTimerDelete(syncModeTimeoutTimerHandler, 0) == pdPASS)
+      syncModeTimeoutTimerHandler =
+          NULL;  // Reasignar a NULL para evitar usos indebidos
 
-  if (sendSyncBroadcastTaskHandler != NULL) {
-    vTaskDelete(sendSyncBroadcastTaskHandler);
-    sendSyncBroadcastTaskHandler = NULL;
+    if (sendSyncBroadcastTaskHandler != NULL) {
+      vTaskDelete(sendSyncBroadcastTaskHandler);
+      sendSyncBroadcastTaskHandler = NULL;
+    }
+
+    if (blinkRGBTaskHandler != NULL) {
+      vTaskDelete(blinkRGBTaskHandler);
+      blinkRGBTaskHandler = NULL;
+      rgb.set(Status::OFF);
+    }
+
+    // Reiniciar ESP-NOW
+    if (!now.reset()) ESP.restart();
+
+    registerAllNodes(config.getNodeLength());
+    now.onReceived(onReceivedCallback);
+    menu.clearCustomInfoScreen();
+
+    syncModeState = false;
   }
-
-  if (blinkRGBTaskHandler != NULL) {
-    vTaskDelete(blinkRGBTaskHandler);
-    blinkRGBTaskHandler = NULL;
-    rgb.set(Status::OFF);
-  }
-
-  // Reiniciar ESP-NOW
-  if (!now.reset()) ESP.restart();
-
-  registerAllNodes(config.getNodeLength());
-  now.onReceived(onReceivedCallback);
-  menu.clearCustomInfoScreen();
 }

@@ -39,9 +39,10 @@ class MenuManager {
     State nextState;
   };
 
-  MenuManager(uint8_t lcdRS, uint8_t lcdEN, uint8_t lcdD4, uint8_t lcdD5,
-              uint8_t lcdD6, uint8_t lcdD7, WebServerManager& server,
-              Data& data, NowManager& now);
+  MenuManager(const gpio_num_t lcdRS, const gpio_num_t lcdEN,
+              const gpio_num_t lcdD4, const gpio_num_t lcdD5,
+              const gpio_num_t lcdD6, const gpio_num_t lcdD7,
+              WebServerManager& server, Data& data, NowManager& now);
   void begin();
   void handleKey(Key key);
   void updateDisplay();
