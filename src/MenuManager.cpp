@@ -395,7 +395,7 @@ void MenuManager::_showSensor() {
           _lcd.printf("%s: %s", data.variable.c_str(),
                       data.isConnected
                           ? formatBooleanToText(data.value.b).c_str()
-                          : "Desconectado");
+                          : "Desc");
           break;
 
         case NowManager::SensorValueType::INT:
@@ -403,7 +403,7 @@ void MenuManager::_showSensor() {
           _lcd.printf(
               "%s: %s%s", data.variable.c_str(),
               data.isConnected ? (isValid ? String(data.value.i).c_str() : "")
-                               : "Desconectado",
+                               : "Desc",
               data.isConnected ? (isValid ? data.units.c_str() : "") : "");
           break;
 
@@ -414,7 +414,7 @@ void MenuManager::_showSensor() {
               data.isConnected
                   ? (isValid ? String(round(data.value.f * 10) / 10).c_str()
                              : "")
-                  : "Desconectado",
+                  : "Desc",
               data.isConnected ? (isValid ? data.units.c_str() : "") : "");
           break;
       }

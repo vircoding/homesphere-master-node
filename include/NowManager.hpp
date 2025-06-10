@@ -10,6 +10,7 @@ class NowManager {
  public:
   static constexpr uint32_t SYNC_MODE_TIMEOUT = 30000;                // 30s
   static constexpr uint32_t SEND_SYNC_BROADCAST_MSG_INTERVAL = 5000;  // 5s
+  static constexpr uint32_t PING_ALL_DEVICES_INTERVAL = 10000;        // 10s
 
   enum class NodeType {
     TEMPERATURE_HUMIDITY = 0x1A,

@@ -26,6 +26,7 @@ class ConfigManager {
   NetworkConfig getSTAConfig() const { return _staConfig; }
   NodeInfo getNode(const uint8_t index) { return _nodes[index]; }
   uint8_t getNodeLength() const { return _nodes.size(); }
+  void printConfig();
 
  private:
   NetworkConfig _apConfig;

@@ -62,6 +62,7 @@ void onSendCallback(const uint8_t* mac, esp_now_send_status_t status);
 void handleMenuTask(void* parameter);
 void blinkRGBTask(void* parameter);
 void sendSyncBroadcastTask(void* parameter);
+void pingAllDevicesTask(void* parameter);
 void enterSyncMode();
 void endSyncMode();
 void onLongButtonPressCallback() { enterSyncMode(); }
@@ -78,6 +79,9 @@ void setup() {
   if (!config.init()) {
     ESP.restart();
   }
+
+  // Test
+  config.printConfig();
 
   wifi.modeAPSTA();
 
@@ -110,6 +114,8 @@ void setup() {
   // Tasks
   xTaskCreatePinnedToCore(handleMenuTask, "Handle Menu", 10000, NULL, 1, NULL,
                           0);
+  xTaskCreatePinnedToCore(pingAllDevicesTask, "Ping All Devices", 4096, NULL, 2,
+                          NULL, 1);
 }
 
 void loop() { syncButton.update(); }
@@ -220,6 +226,8 @@ void onSendCallback(const uint8_t* mac, esp_now_send_status_t status) {
         now.desconnectSensor(device->mac, "Temp");
         Serial.println("Desconectando humedad");
         now.desconnectSensor(device->mac, "Hum");
+        menu.updateData();
+
         break;
 
       case NowManager::NodeType::RELAY:
@@ -228,7 +236,7 @@ void onSendCallback(const uint8_t* mac, esp_now_send_status_t status) {
         break;
     }
 
-    now.printAllDevices();
+    // now.printAllDevices();
   }
 }
 
@@ -278,8 +286,15 @@ void sendSyncBroadcastTask(void* parameter) {
   while (1) {
     now.sendSyncBroadcastMsg();
 
-    vTaskDelay(
-        pdMS_TO_TICKS(NowManager::SEND_SYNC_BROADCAST_MSG_INTERVAL));  // 10s
+    vTaskDelay(pdMS_TO_TICKS(NowManager::SEND_SYNC_BROADCAST_MSG_INTERVAL));
+  }
+}
+
+void pingAllDevicesTask(void* parameter) {
+  while (1) {
+    pingAllDevices();
+
+    vTaskDelay(pdMS_TO_TICKS(NowManager::PING_ALL_DEVICES_INTERVAL));
   }
 }
 
@@ -329,6 +344,9 @@ void onRegistrationReceivedCallback(const uint8_t* mac, const uint8_t* data,
         now.addDevice(mac, msg->nodeType, "Nodo Secundario",
                       msg->firmwareVersion))
       now.sendConfirmRegistrationMsg(mac);
+
+    // Test
+    config.printConfig();
 
     endSyncMode();
   }

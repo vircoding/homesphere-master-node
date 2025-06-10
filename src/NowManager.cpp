@@ -223,32 +223,38 @@ bool NowManager::addDevice(const uint8_t* mac, const uint8_t nodeType,
 void NowManager::printAllDevices() {
   int i = 0;
   Serial.println("Dispositivos vinculados: ");
-  for (const auto& device : _pairedDevices) {
-    Serial.printf("%d - MAC: %s, Tipo: %d, Ultima vez: %lu\n", i,
-                  macToString(device.mac).c_str(), device.nodeType,
-                  device.lastSeen);
+  if (_pairedDevices.size() > 0) {
+    for (const auto& device : _pairedDevices) {
+      Serial.printf("%d - MAC: %s, Tipo: %d, Ultima vez: %lu\n", i,
+                    macToString(device.mac).c_str(), device.nodeType,
+                    device.lastSeen);
 
-    i++;
+      i++;
+    }
   }
 
-  i = 0;
   Serial.println("Sensores vinculados: ");
-  for (const auto& sensor : _sensors) {
-    Serial.printf("%d - MAC: %s, Nombre: %s, Valor: %f, Conectado: %s\n", i,
-                  macToString(sensor.mac).c_str(), sensor.deviceName.c_str(),
-                  sensor.value,
-                  formatBooleanToText(sensor.isConnected).c_str());
-    i++;
+  if (_sensors.size() > 0) {
+    i = 0;
+    for (const auto& sensor : _sensors) {
+      Serial.printf("%d - MAC: %s, Nombre: %s, Conectado?: %s\n", i,
+                    macToString(sensor.mac).c_str(), sensor.deviceName.c_str(),
+                    formatBooleanToText(sensor.isConnected).c_str());
+      i++;
+    }
   }
 
-  i = 0;
   Serial.println("Actuadores vinculados: ");
-  for (const auto& actuator : _actuators) {
-    Serial.printf("%d - MAC: %s, Nombre: %s, Estado: %s, Conectado: %s\n", i,
-                  macToString(actuator.mac).c_str(),
-                  actuator.deviceName.c_str(),
-                  formatBooleanToText(actuator.state).c_str(),
-                  formatBooleanToText(actuator.isConnected).c_str());
+  if (_actuators.size() > 0) {
+    i = 0;
+    for (const auto& actuator : _actuators) {
+      Serial.printf("%d - MAC: %s, Nombre: %s, Estado: %s, Conectado: %s\n", i,
+                    macToString(actuator.mac).c_str(),
+                    actuator.deviceName.c_str(),
+                    formatBooleanToText(actuator.state).c_str(),
+                    formatBooleanToText(actuator.isConnected).c_str());
+      i++;
+    }
   }
 }
 

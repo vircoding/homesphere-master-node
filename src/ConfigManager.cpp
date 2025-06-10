@@ -99,6 +99,21 @@ bool ConfigManager::saveNodeConfig(const uint8_t* mac, const uint8_t nodeType,
   return _loadConfig();
 }
 
+void ConfigManager::printConfig() {
+  File configFile = LittleFS.open("/config.json", "r");
+  if (!configFile) return;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, configFile)) {
+    configFile.close();
+    return;
+  }
+
+  Serial.print("Config File: ");
+  serializeJsonPretty(doc, Serial);
+  Serial.println();
+}
+
 bool ConfigManager::_writeConfig(const JsonDocument& doc) {
   File configFile = LittleFS.open("/config.json", "w");
   if (!configFile) return false;
